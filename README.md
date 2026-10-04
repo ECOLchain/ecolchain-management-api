@@ -1,2 +1,2 @@
-# ecolchain-core-api
+# ecolchain-management-api
 Project for backend

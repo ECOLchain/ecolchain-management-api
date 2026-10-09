@@ -1,0 +1,4 @@
+meta { name: Confirmar upload, type: http, seq: 12 }
+post { url: {{baseUrl}}/me/onboarding/documents/{{docCode}}/confirm, body: json, auth: bearer }
+auth:bearer { token: {{token}} }
+body:json { { "objectKey": "{{objectKey}}" } }

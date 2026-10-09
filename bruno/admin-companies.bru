@@ -1,0 +1,3 @@
+meta { name: Admin - listar empresas, type: http, seq: 15 }
+get { url: {{baseUrl}}/admin/companies?status=UNDER_REVIEW, body: none, auth: bearer }
+auth:bearer { token: {{token}} }

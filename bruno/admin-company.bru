@@ -1,0 +1,3 @@
+meta { name: Admin - detalhe empresa, type: http, seq: 16 }
+get { url: {{baseUrl}}/admin/companies/{{companyId}}, body: none, auth: bearer }
+auth:bearer { token: {{token}} }

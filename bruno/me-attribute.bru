@@ -1,0 +1,4 @@
+meta { name: Gravar atributo, type: http, seq: 10 }
+put { url: {{baseUrl}}/me/onboarding/attributes/{{attributeCode}}, body: json, auth: bearer }
+auth:bearer { token: {{token}} }
+body:json { { "valor": "3830100" } }

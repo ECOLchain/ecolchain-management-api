@@ -1,0 +1,4 @@
+meta { name: OTP request, type: http, seq: 1 }
+post { url: {{baseUrl}}/auth/otp/request, body: json, auth: none }
+body:json { { "email": "{{email}}" } }
+assert { res.status: eq 202 }

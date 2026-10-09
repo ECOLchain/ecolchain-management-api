@@ -2,9 +2,9 @@
 
 > **Status:** rascunho para discussão · **Escopo:** MVP · **Repo:** `ecolchain-management-api`
 >
-> Para a conversa, o essencial está nas seções 3 (decisões D1 a D13), 4 (C4) e 6 (perguntas abertas). Os anexos A, B e C têm o detalhe: modelo de dados, endpoints, segurança.
+> Para a conversa, o essencial está nas seções 3 (decisões D1 a D13), 4 (C4) e 6 (decisões registradas e pendências). Os anexos A a D têm o detalhe: modelo de dados, endpoints, segurança e a matriz de atributos por perfil.
 >
-> **Lacuna:** a lista de dados e documentos por tipo de perfil não veio na mensagem (só os 6 nomes). O catálogo nasce com os 6 tipos e **sem atributos**; os exemplos abaixo são ilustrativos.
+> A matriz de dados e documentos por tipo de perfil já chegou e vira seed no **anexo D**.
 
 Os diagramas são Mermaid: o GitHub renderiza direto e o preview de Markdown do IntelliJ também (pode pedir para baixar a extensão na primeira vez).
 
@@ -12,10 +12,11 @@ Os diagramas são Mermaid: o GitHub renderiza direto e o preview de Markdown do 
 
 1. **E-mail + código (OTP), sem senha.** O mesmo fluxo faz sign-up e sign-in.
 2. **JWT** emitido pela própria API (RS256): access token curto + refresh token rotativo. Chaves geradas localmente no MVP.
-3. **Cadastro em 2 passos:** (1) e-mail + código; (2) CNPJ, razão social, nome completo e **tipo de perfil**.
-4. **Onboarding dinâmico:** depois do cadastro o app pede dados e documentos conforme o tipo de perfil. Tipos, atributos e passos são **dados no banco, editados por endpoints de admin**: mudar o fluxo não exige deploy.
+3. **Cadastro em 2 passos:** (1) e-mail + código; (2) CNPJ, razão social, nome completo e **tipo(s) de perfil** — a empresa pode ter mais de um.
+4. **Onboarding dinâmico:** depois do cadastro o app pede dados e documentos conforme os tipos de perfil escolhidos. Tipos, atributos e passos são **dados no banco, editados por endpoints de admin**: mudar o fluxo não exige deploy.
 5. **Documentos** vão do navegador direto para o OCI Object Storage (URL pré-assinada). O banco guarda só a **chave (string)**.
-6. **Revisão pelo admin** (aprova, pede ajustes ou rejeita) antes de a empresa ficar `APPROVED`.
+6. **Revisão pelo admin** (aprova, pede ajustes ou rejeita) antes de a empresa ficar `APPROVED`. Antes da aprovação, a empresa **só vê o status**.
+7. **Hexagonal + API-first** (ver 3.2): contrato OpenAPI primeiro, controllers implementam interfaces geradas, envelope `{data, links, erros}` obrigatório, doc por use case.
 
 **Dentro do MVP:** PJ (CNPJ); 1 login por empresa, do dono ou representante legal.
 **Fora, por enquanto:** operadores e funcionários, PF, senha e 2FA, KYC automático, vínculo com carteira on-chain, painel web do admin (no MVP o admin usa Bruno ou curl) e troca de e-mail ou de titular do login (no MVP, só o admin faz, como suporte).
@@ -28,9 +29,10 @@ Os diagramas são Mermaid: o GitHub renderiza direto e o preview de Markdown do 
 | CNPJ, nome completo, razão social, tipo de perfil | D10, 5.1 |
 | Tipos de perfil servidos por endpoint do admin (6 iniciais) | D6, A, B |
 | Só PJ; dono ou representante legal | D10, 5.1 |
-| Documentos por tipo de perfil, valores como string, presign no bucket OCI | D6 a D8, 5.2, A |
+| Documentos por tipo de perfil, valores como string, presign no bucket OCI | D6 a D8, 5.2, A, D |
 | Admin muda fluxos sem deploy | D6, 3.1, A |
 | Empresa só com o login dela (sem operadores) | D9 |
+| Hexagonal, API-first, envelope `{data, links, erros}`, doc por use case | 3.2 |
 | Diagrama C4 | 4 |
 
 ## 2. O que já existe
@@ -40,8 +42,8 @@ Os diagramas são Mermaid: o GitHub renderiza direto e o preview de Markdown do 
 | API | Quarkus 3.40 (Java 25), Panache, Flyway, Oracle ADB 23ai (`MGMT_DEV` e `MGMT_PROD`), OpenAPI, logs JSON. Pacote único `com.ecolchain.api` | Entram `quarkus-smallrye-jwt`, `quarkus-smallrye-jwt-build` e `quarkus-mailer`. Direção já definida no `AGENTS.md`: **API-first** (contrato OpenAPI primeiro, interfaces geradas pelo OpenAPI Generator, implementação depois) |
 | Documentos | `DocumentStorageService` gera URLs pré-assinadas (PUT 10 min, GET 5 min, máx. 25 MiB, extensões em allow-list). `DevDocumentResource` só existe no profile `dev`, **não tem auth** e é temporário (será substituído). A chave (`docs/<uuid>-<arquivo>`) **não tem dono** | Reaproveitar o serviço. O upload-url vira `POST` e cria uma intenção de upload (`DOCUMENT`), com prefixo por empresa e checagem de dono (D8) |
 | E-mail | Módulo Terraform `oci/email-delivery` em andamento (branch `feat/oci-email-delivery` do infra): Email Domain `ecolchain.com`, DKIM no Cloudflare, Approved Sender `ecolchain@ecolchain.com`, credencial SMTP. O README da API já documenta o uso (SMTP 465 com TLS implícito, mock em dev e test). **Limite da tenancy: 200 e-mails/24 h e 10/min** | Base do envio do OTP (D11). O limite exige rate limit desde o primeiro dia |
-| Front | `ecolchain-core-web` (React; `app.ecolchain.com`, dev em `app-dev-tester.ecolchain.com`) hoje só conecta carteira Solana: não há login | Passa a usar `/auth` e `/me`. O login da empresa é separado da carteira |
-| Hospedagem da API | Ainda não existe no infra | Afeta cookie, CORS e entrega das chaves (seção 6, pergunta 9) |
+| Front | O SPA desta plataforma **ainda não existe**: será o repo `ecolchain-management-web`. O `ecolchain-core-web` (React; `app.ecolchain.com`) continua só com carteira Solana | O Management Web nasce consumindo `/auth` e `/me`. O login da empresa é separado da carteira |
+| Hospedagem da API | Ainda não existe no infra; por ora **tudo roda local** (`quarkus:dev`), máquina OCI depois | Cookie, CORS e entrega das chaves ficam parametrizados para quando o deploy chegar |
 | On-chain | `Participante.kyc_hash` é informado pelo operador no cadastro on-chain. Os papéis on-chain (Coletor, Cooperativa, Transportador, Indústria) diferem dos 6 tipos desta proposta | Futuro: esta API vira a fonte do cadastro/KYC off-chain e do `kyc_hash`. Fora do escopo agora |
 
 ## 3. Decisões propostas
@@ -50,17 +52,17 @@ Os diagramas são Mermaid: o GitHub renderiza direto e o preview de Markdown do 
 |---|---|---|---|
 | D1 | Credencial | E-mail + código numérico (OTP) de 6 dígitos, **sem senha**. O mesmo `request`/`verify` serve para sign-up e sign-in | Não há senha para guardar, vazar ou resetar, e a resposta é igual exista ou não a conta (sem enumeração). Alternativa: senha + OTP só no cadastro (mais atrito e mais superfície) |
 | D2 | Sessão | **Access JWT** de 15 min (RS256) + **refresh token opaco** de 7 dias, rotativo, com detecção de reuso. Refresh em cookie `HttpOnly; Secure; SameSite=Strict; Path=/auth`; access em memória no SPA | Token curto limita o estrago e o refresh permite logout e revogação de verdade. Exige a API sob `*.ecolchain.com` (mesmo site do SPA); se não der, o refresh vai no corpo da resposta. Alternativa mais simples: um único JWT de 1 a 8 h, sem revogação |
-| D3 | Chaves JWT (MVP) | Par RSA 2048 gerado por script local; **a privada fica fora do git**; `kid` no header; no deploy a chave entra por arquivo montado ou variável de ambiente | Detalhes em C.1. Evolução: OCI Vault e rotação com JWKS |
+| D3 | Chaves JWT (MVP) | Par RSA 2048 gerado por script; **dev e prod commitadas em `keys/`** (decisão explícita do dono, é MVP). `kid` no header desde já | Detalhes em C.1. Débito técnico registrado: mover para secret/OCI Vault e JWKS na evolução |
 | D4 | Autorização | Claim `groups` = `COMPANY_OWNER` ou `PLATFORM_ADMIN`; `@RolesAllowed` por prefixo (`/me/**`, `/admin/**`); deny by default nas demais rotas. Estado da conta e da empresa é lido do banco, não do token. Em `/admin/**` o papel também é conferido no banco | O token só prova identidade. Regra de negócio fica sempre no servidor, e a conferência no banco reduz o estrago se a chave vazar |
-| D5 | Admin | Allow-list de e-mails em config (`app.auth.admin-emails`): quem estiver nela vira `PLATFORM_ADMIN` no primeiro login | Bootstrap mínimo. Depois: convite de admins por endpoint e 2º fator |
-| D6 | Catálogo dinâmico | `PROFILE_TYPE` → `ONBOARDING_STEP` → `STEP_ATTRIBUTE` → `ATTRIBUTE_DEFINITION` no banco, editados por endpoint. A API devolve o **schema do formulário** e o SPA só renderiza | Exigir outro documento ou dado vira 1 chamada, sem deploy da API nem do SPA |
+| D5 | Admin | `leandroluz201616@mail.com` semeado por migration como `PLATFORM_ADMIN` (o login é o mesmo OTP de todo mundo); novos admins via INSERT no banco por ora | Bootstrap mínimo. Depois: convite de admins por endpoint e 2º fator |
+| D6 | Catálogo dinâmico | `PROFILE_TYPE` → `ONBOARDING_STEP` → `STEP_ATTRIBUTE` → `ATTRIBUTE_DEFINITION` no banco, editados por endpoint. A API devolve o **schema do formulário** e o SPA só renderiza. Empresa pode ter **N tipos** (`COMPANY_PROFILE`); o schema servido é a **união** dos fluxos, sem repetir atributo. Rótulos bilíngues (`label_pt`/`label_en`, `help_pt`/`help_en`) | Exigir outro documento ou dado vira 1 chamada, sem deploy da API nem do SPA |
 | D7 | Valores | Tudo `VARCHAR2`: dado = texto; documento = **chave do objeto** no bucket | Como pedido. A validação (regex, tamanho, extensão) vem das `rules` do atributo e só pode **restringir** a política global (`app.docs.*`) |
 | D8 | Documentos | `POST upload-url` cria uma intenção de upload (`DOCUMENT` PENDING) e devolve o presign PUT → upload direto → `confirm` (a API faz HEAD no objeto, marca `CONFIRMED` e grava a chave no atributo). Chave `docs/<companyId>/<atributo>/<uuid>-<arquivo>`; a API só confirma chaves que ela mesma emitiu para aquela empresa | Impede que uma empresa "reivindique" arquivo de outra (IDOR) e deixa rastro de uploads órfãos para limpeza. Reaproveita TTL e limite atuais |
 | D9 | Tenant | `ACCOUNT` ↔ `COMPANY_MEMBER` (role `OWNER`) ↔ `COMPANY`, com 1 membro por empresa | Operadores e funcionários entram depois com novas linhas e convite, sem migrar dados |
-| D10 | Empresa (PJ) | Núcleo fixo: CNPJ, razão social, nome completo, tipo de perfil. CNPJ validado por dígito verificador (**já aceita o formato alfanumérico**, em vigor desde jul/2026) e único entre as empresas não rejeitadas; consulta pública opcional só para pré-preencher a razão social. Declaração "sou dono ou representante legal" + aceite de termos versionado | **Nome completo** (a pessoa) e **razão social** (a empresa) não são a mesma coisa: coincidem só em EI e MEI (no MEI a razão social vem com o CPF). Pedimos os dois |
+| D10 | Empresa (PJ) | Núcleo fixo: CNPJ, razão social, nome completo, tipo(s) de perfil (1..N). CNPJ validado por dígito verificador (**já aceita o formato alfanumérico**, em vigor desde jul/2026) e único entre as empresas não rejeitadas; consulta pública opcional só para pré-preencher a razão social. Declaração "sou dono ou representante legal" + aceite de termos versionado. Troca de tipos **livre até submeter** — os requisitos são recalculados na hora | **Nome completo** (a pessoa) e **razão social** (a empresa) não são a mesma coisa: coincidem só em EI e MEI (no MEI a razão social vem com o CPF). Pedimos os dois |
 | D11 | E-mail | OCI Email Delivery por SMTP via Quarkus Mailer, como já definido no módulo de infra e no README. Mock em dev e test | Detalhes em C.2 |
-| D12 | Aprovação | Revisão manual do admin: aprova, pede ajustes (com motivo) ou rejeita, por documento e no geral | Mínimo razoável para cadastro regulado. Evolui para regras automáticas |
-| D13 | Erros | Formato RFC 9457 (`application/problem+json`) com `code` estável (ex.: `OTP_INVALID`, `CNPJ_IN_USE`), emitido por um `ExceptionMapper` único. Na auth, código errado, expirado ou inexistente devolve sempre o mesmo `code` | O SPA traduz pelo `code`, sem depender de texto. Hoje o `DevDocumentResource` devolve `{"error": "..."}` ad hoc |
+| D12 | Aprovação | Revisão manual do admin: aprova, pede ajustes (com motivo) ou rejeita, por documento e no geral. Antes de aprovar, a empresa **só consulta o status** — não acessa nenhuma outra funcionalidade. Requisito novo publicado pelo admin empurra empresas `APPROVED` daquele tipo para `PENDING_UPDATE` (a "rota de pendente"), que volta para `UNDER_REVIEW` ao resubmeter | Mínimo razoável para cadastro regulado. Evolui para regras automáticas |
+| D13 | Envelope e erros | Toda resposta segue `{ "data": {} | null, "links": [], "erros": [] }` — `links` carrega HATEOAS útil ao SPA (ex.: próximo passo) e `erros` traz **objetos Problem Details da RFC 9457** (`type`, `title`, `status`, `detail`, `instance`) mais as extensões `code` (estável, ex.: `OTP_INVALID`, `CNPJ_IN_USE`) e `campo` (opcional). Na auth, código errado, expirado ou inexistente devolve sempre o mesmo `code`. Um único grupo de mappers (`ExceptionMapper`/`@ServerExceptionMapper` — o "ControllerAdvice" do Quarkus) monta o envelope | O SPA traduz pelo `code`, sem depender de texto. Hoje o `DevDocumentResource` devolve `{"error": "..."}` ad hoc |
 
 **Alternativa descartada no MVP:** IdP gerenciado (OCI IAM Identity Domains, Keycloak, Auth0). Entrega MFA, reset e login social prontos, mas é mais uma peça para operar e pagar, e o onboarding dinâmico continuaria sendo da API. Se um dia entrar, tende a ser troca de configuração de verificação do token, não de regra de negócio.
 
@@ -74,6 +76,37 @@ Os diagramas são Mermaid: o GitHub renderiza direto e o preview de Markdown do 
 | Decisões de revisão por documento e por empresa | Máquina de estados da empresa e política global de upload (`app.docs.*`) |
 
 Os parâmetros de segurança ficam estáticos de propósito: menos superfície de ataque se um admin for comprometido.
+
+### 3.2 Arquitetura de código (hexagonal + API-first)
+
+Decisões do dono, registradas também no `AGENTS.md`:
+
+- **API-first**: o contrato `openapi/management-api.yaml` é a fonte da verdade — os endpoints do anexo B viram `paths` e `schemas` ali. O plugin do OpenAPI Generator gera as interfaces JAX-RS e os controllers as implementam; nada de endpoint criado fora do contrato.
+- **Hexagonal por contexto**: `domain` puro (sem Quarkus), `application` com `port.in` (use cases) e `port.out` (stores, mail, storage, issuer), e `adapter` (`in.web` = controllers que implementam as interfaces geradas, `out.persistence` = Panache, `out.storage` = S3, `out.mail` = SMTP, `out.security` = JWT). Controller só traduz HTTP↔use case.
+- **Idiomas**: código em inglês; campos do contrato (request/response) em pt-BR camelCase (`razaoSocial`, `nomeCompleto`, `tiposPerfil`); paths em inglês.
+- **Payloads**: schemas do contrato chamados `<Nome>Request`/`<Nome>Response`, gerados no pacote `contract.model`. Payloads manuais (se houver) ficam em `request`/`response` da feature. Nunca `*Dto`.
+- **Envelope**: um único `ApiResponse` (`data`, `links`, `erros`), montado num só lugar — controllers retornam o `data` e um grupo de `ExceptionMapper`/`@ServerExceptionMapper` converte exceções de domínio em itens RFC 9457 dentro de `erros`.
+- **Doc por use case**: `docs/features/<feature>.md` descreve o fluxo; a classe referencia o arquivo no Javadoc. Mudou o código sem atualizar o doc = PR incompleto.
+- **Clean Code + SOLID**, sem gambiarras.
+
+```text
+com.ecolchain.api
+├── common                 # ApiResponse, ProblemFactory, mappers, config
+├── identity               # auth, conta, sessão
+│   ├── domain             # OtpPolicy (HMAC/TTL/tentativas), rotação de refresh
+│   ├── application
+│   │   ├── port.in        # RequestOtp, VerifyOtp, RefreshSession, Logout, GetMe
+│   │   ├── port.out       # AccountStore, OtpStore, RefreshTokenStore, MailSender, TokenIssuer
+│   │   └── usecase
+│   └── adapter
+│       ├── in.web         # AuthController (implementa a interface gerada)
+│       ├── out.persistence# PanacheAccountRepository, ...
+│       ├── out.mail       # SmtpMailSenderAdapter (Quarkus Mailer)
+│       └── out.security   # SmallRyeJwtIssuer
+├── onboarding             # empresa, schema dinâmico, valores, submit
+├── catalog                # tipos de perfil, passos, atributos (admin)
+└── documents              # presign/confirm — DocumentStorageService vira adapter.out.storage
+```
 
 ## 4. Arquitetura (C4)
 
@@ -91,7 +124,7 @@ flowchart TB
     owner("<b>Representante legal</b><br/><i>[Pessoa]</i><br/>Dono ou representante<br/>legal da PJ"):::person
     admin("<b>Admin Ecolchain</b><br/><i>[Pessoa]</i><br/>Dono da plataforma"):::person
 
-    web["<b>Ecolchain Core Web</b><br/><i>[Sistema]</i><br/>SPA React: cadastro<br/>e onboarding"]:::system
+    web["<b>Ecolchain Management Web</b><br/><i>[Sistema]</i><br/>SPA React (repo novo):<br/>cadastro e onboarding"]:::system
     api["<b>Ecolchain<br/>Management API</b><br/><i>[Sistema em foco]</i><br/>Identidade, JWT, cadastro<br/>e onboarding configurável"]:::system
 
     mail["<b>OCI Email Delivery</b><br/><i>[Sistema externo]</i><br/>Envia o código<br/>de verificação"]:::ext
@@ -118,7 +151,7 @@ flowchart TB
 
     owner("<b>Representante legal</b><br/><i>[Pessoa]</i>"):::person
     admin("<b>Admin Ecolchain</b><br/><i>[Pessoa]</i>"):::person
-    web["<b>Ecolchain Core Web</b><br/><i>[Sistema]</i><br/>SPA React"]:::system
+    web["<b>Ecolchain Management Web</b><br/><i>[Sistema]</i><br/>SPA React (repo novo)"]:::system
     mail["<b>OCI Email Delivery</b><br/><i>[Sistema externo]</i><br/>SMTP"]:::ext
     cnpj["<b>Consulta de CNPJ</b><br/><i>[Sistema externo]</i><br/>Opcional"]:::ext
 
@@ -148,31 +181,31 @@ flowchart TB
     classDef ext fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
 
-    web["<b>Core Web</b><br/><i>[Container: React SPA]</i><br/>Cliente HTTP"]:::container
+    web["<b>Management Web</b><br/><i>[Container: React SPA]</i><br/>Cliente HTTP"]:::container
     mail["<b>OCI Email Delivery</b><br/><i>[Sistema externo]</i><br/>SMTP"]:::ext
     db[("<b>Autonomous Database</b><br/><i>[Container: Oracle 23ai]</i><br/>ACCOUNT, EMAIL_OTP,<br/>REFRESH_TOKEN")]:::container
 
     subgraph api["Management API  <i>[Container: Quarkus]</i>"]
-        authRes["<b>AuthResource</b><br/><i>[Component: JAX-RS /auth]</i><br/>request, verify,<br/>refresh, logout"]:::component
-        otp["<b>OtpService</b><br/><i>[Component: CDI]</i><br/>Gera e valida o código:<br/>HMAC, TTL, tentativas,<br/>cooldown"]:::component
-        accounts["<b>AccountService</b><br/><i>[Component: CDI]</i><br/>Cria a conta no 1º login<br/>e aplica a allow-list<br/>de admins"]:::component
-        tokens["<b>TokenService</b><br/><i>[Component: SmallRye<br/>JWT Build]</i><br/>Assina o access JWT<br/>(RS256, kid). Emite e<br/>rotaciona o refresh"]:::component
-        mailer["<b>EmailSender</b><br/><i>[Component: Quarkus Mailer]</i><br/>Envia o código após<br/>o commit. Mock em<br/>dev e test"]:::component
+        authCtl["<b>AuthController</b><br/><i>[Component: adapter.in.web]</i><br/>Implementa a interface<br/>gerada do OpenAPI"]:::component
+        uc["<b>Use cases de auth</b><br/><i>[Component: application]</i><br/>RequestOtp, VerifyOtp,<br/>RefreshSession, Logout"]:::component
+        domain["<b>Domínio de auth</b><br/><i>[Component: domain]</i><br/>OtpPolicy: HMAC, TTL,<br/>tentativas, cooldown.<br/>Rotação de refresh"]:::component
+        repos["<b>Repositories</b><br/><i>[Component:<br/>adapter.out.persistence]</i><br/>Panache: ACCOUNT,<br/>EMAIL_OTP, REFRESH_TOKEN"]:::component
+        mailAd["<b>MailSenderAdapter</b><br/><i>[Component: adapter.out.mail]</i><br/>Quarkus Mailer; envia<br/>após o commit. Mock<br/>em dev e test"]:::component
+        jwtAd["<b>JwtIssuerAdapter</b><br/><i>[Component:<br/>adapter.out.security]</i><br/>SmallRye JWT: RS256,<br/>kid; hash do refresh"]:::component
     end
     style api fill:#ffffff,stroke:#444444,stroke-dasharray:6 4,color:#222222
 
-    web -->|"request, verify, refresh<br/><i>[HTTPS]</i>"| authRes
-    authRes -->|usa| otp
-    authRes -->|usa| accounts
-    authRes -->|usa| tokens
-    otp -->|"envia código"| mailer
-    mailer -->|"<i>[SMTP]</i>"| mail
-    otp -->|"EMAIL_OTP<br/><i>[JDBC]</i>"| db
-    accounts -->|"ACCOUNT<br/><i>[JDBC]</i>"| db
-    tokens -->|"REFRESH_TOKEN<br/><i>[JDBC]</i>"| db
+    web -->|"request, verify, refresh<br/><i>[HTTPS]</i>"| authCtl
+    authCtl -->|"port in"| uc
+    uc -->|"regras puras"| domain
+    uc -->|"port out: stores"| repos
+    uc -->|"port out: MailSender"| mailAd
+    uc -->|"port out: TokenIssuer"| jwtAd
+    repos -->|"<i>[JDBC]</i>"| db
+    mailAd -->|"<i>[SMTP]</i>"| mail
 ```
 
-O `JWT Guard`, que valida o Bearer nas rotas `/me` e `/admin`, está em 4.4.
+O `JWT Guard`, que valida o Bearer nas rotas `/me` e `/admin`, está em 4.4. O mesmo desenho em camadas (controller → port in → use case → port out → adapter) vale para os outros contextos.
 
 ### 4.4 Componentes: onboarding e catálogo (nível 3)
 
@@ -183,39 +216,39 @@ flowchart TB
     classDef ext fill:#999999,stroke:#6b6b6b,color:#ffffff
     classDef component fill:#85bbf0,stroke:#5d82a8,color:#000000
 
-    web["<b>Core Web</b><br/><i>[Container: React SPA]</i><br/>Cliente HTTP"]:::container
+    web["<b>Management Web</b><br/><i>[Container: React SPA]</i><br/>Cliente HTTP"]:::container
     bucket[("<b>Bucket de documentos</b><br/><i>[Container: OCI<br/>Object Storage]</i><br/>Privado")]:::container
     cnpjapi["<b>Consulta de CNPJ</b><br/><i>[Sistema externo]</i><br/>Opcional"]:::ext
 
     subgraph api["Management API  <i>[Container: Quarkus]</i>"]
         guard["<b>JWT Guard</b><br/><i>[Component:<br/>quarkus-smallrye-jwt]</i><br/>Autentica e autoriza<br/>por role"]:::component
-        meRes["<b>OnboardingResource</b><br/><i>[Component: JAX-RS /me]</i><br/>Empresa, schema dinâmico,<br/>valores, submit"]:::component
-        adminRes["<b>AdminResource</b><br/><i>[Component: JAX-RS /admin]</i><br/>CRUD do catálogo,<br/>revisão, auditoria"]:::component
-        onb["<b>OnboardingService</b><br/><i>[Component: CDI]</i><br/>Estados da empresa,<br/>validação por rules,<br/>completude, revisão"]:::component
-        catalog["<b>CatalogService</b><br/><i>[Component: CDI]</i><br/>Tipos, passos, atributos.<br/>Monta o schema<br/>do formulário"]:::component
-        cnpj["<b>CnpjService</b><br/><i>[Component: CDI]</i><br/>DV alfanumérico,<br/>unicidade, consulta<br/>opcional"]:::component
-        docs["<b>DocumentStorageService</b><br/><i>[Component: S3Presigner,<br/>S3Client]</i><br/>Presign PUT e GET, HEAD,<br/>prefixo por empresa.<br/>Já existe e evolui"]:::component
-        audit["<b>AuditService</b><br/><i>[Component: CDI]</i><br/>Registra quem<br/>mudou o quê"]:::component
+        meCtl["<b>OnboardingController</b><br/><i>[Component: adapter.in.web<br/>/me]</i><br/>Empresa, schema,<br/>valores, submit"]:::component
+        admCtl["<b>AdminController</b><br/><i>[Component: adapter.in.web<br/>/admin]</i><br/>Catálogo, revisão,<br/>auditoria"]:::component
+        ucMe["<b>Use cases de onboarding</b><br/><i>[Component: application]</i><br/>RegisterCompany, GetSchema,<br/>SaveAttribute, RequestUpload,<br/>ConfirmUpload, Submit"]:::component
+        ucAdm["<b>Use cases de catálogo<br/>e revisão</b><br/><i>[Component: application]</i><br/>DefineProfileType,<br/>ReplaceFlow, ReviewCompany"]:::component
+        domain["<b>Domínio de onboarding</b><br/><i>[Component: domain]</i><br/>Estados da empresa,<br/>completude, rules,<br/>dedup multi-perfil"]:::component
+        repos["<b>Repositories</b><br/><i>[Component:<br/>adapter.out.persistence]</i><br/>Catálogo, empresas,<br/>valores, AUDIT_LOG"]:::component
+        storage["<b>ObjectStorageAdapter</b><br/><i>[Component:<br/>adapter.out.storage]</i><br/>Presign PUT/GET e HEAD.<br/>Evolução do<br/>DocumentStorageService"]:::component
+        cnpjAd["<b>CnpjLookupAdapter</b><br/><i>[Component: adapter.out.cnpj]</i><br/>DV alfanumérico e<br/>consulta opcional"]:::component
     end
     style api fill:#ffffff,stroke:#444444,stroke-dasharray:6 4,color:#222222
 
     web -->|"Bearer JWT<br/><i>[HTTPS]</i>"| guard
-    guard -->|"role COMPANY_OWNER"| meRes
-    guard -->|"role PLATFORM_ADMIN"| adminRes
-    meRes -->|usa| onb
-    adminRes -->|"revisão"| onb
-    adminRes -->|"grava catálogo"| catalog
-    adminRes -->|"registra mudanças"| audit
-    onb -->|"lê schema e rules"| catalog
-    onb -->|"valida CNPJ"| cnpj
-    onb -->|"upload e confirmação"| docs
-    cnpj -->|"consulta<br/><i>[HTTPS]</i>"| cnpjapi
-    docs -->|"presign e HEAD<br/><i>[S3-compat]</i>"| bucket
+    guard -->|"role COMPANY_OWNER"| meCtl
+    guard -->|"role PLATFORM_ADMIN"| admCtl
+    meCtl -->|"port in"| ucMe
+    admCtl -->|"port in"| ucAdm
+    ucMe -->|"regras"| domain
+    ucAdm -->|"regras"| domain
+    ucMe -->|"port out: stores"| repos
+    ucAdm -->|"port out: stores"| repos
+    ucMe -->|"port out: ObjectStorage"| storage
+    ucMe -->|"port out: CnpjLookup"| cnpjAd
+    cnpjAd -->|"consulta<br/><i>[HTTPS]</i>"| cnpjapi
+    storage -->|"presign e HEAD<br/><i>[S3-compat]</i>"| bucket
 ```
 
-Todos os serviços persistem no Autonomous Database via Panache (setas omitidas para legibilidade; ver 4.2).
-
-Pacotes sugeridos em `com.ecolchain.api`: `auth`, `onboarding`, `catalog`, `documents` (o serviço atual muda para cá) e `common`. Os padrões de backend que o `AGENTS.md` espera desta proposta: pacotes (acima), erro (D13) e auth (D1 a D4 e D11).
+Os adapters de persistência falam com o Autonomous Database via Panache (setas omitidas para legibilidade; ver 4.2). O layout de pacotes completo está em 3.2.
 
 O diagrama de deployment fica para quando a hospedagem da API for definida (pergunta 9). Os fluxos dinâmicos estão na seção 5.
 
@@ -227,7 +260,7 @@ O diagrama de deployment fica para quando a hospedagem da API for definida (perg
 sequenceDiagram
     autonumber
     actor U as Representante legal
-    participant W as Core Web (SPA)
+    participant W as Management Web (SPA)
     participant A as Management API
     participant D as Autonomous DB
     participant E as OCI Email Delivery
@@ -251,8 +284,8 @@ sequenceDiagram
     opt ainda sem empresa
         W->>A: GET /public/profile-types
         A-->>W: tipos ativos
-        W->>A: PUT /me/company {cnpj, razaoSocial, nomeCompleto, profileType, aceites}
-        A->>D: valida CNPJ (DV e único), cria COMPANY e o membro OWNER
+        W->>A: PUT /me/company {cnpj, razaoSocial, nomeCompleto, tiposPerfil, aceites}
+        A->>D: valida CNPJ (DV e único), cria COMPANY, os COMPANY_PROFILE e o membro OWNER
     end
 ```
 
@@ -261,7 +294,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant W as Core Web (SPA)
+    participant W as Management Web (SPA)
     participant A as Management API
     participant B as Bucket OCI
     participant D as Autonomous DB
@@ -293,31 +326,43 @@ stateDiagram-v2
     UNDER_REVIEW --> REJECTED: admin rejeita
     APPROVED --> CHANGES_REQUESTED: admin reabre
     APPROVED --> SUSPENDED: admin suspende
+    APPROVED --> PENDING_UPDATE: admin publica novo requisito no tipo
+    PENDING_UPDATE --> UNDER_REVIEW: submit dos itens pendentes
 ```
 
-O `nextStep` é calculado no servidor a partir desses estados. O SPA não carrega regra de fluxo.
+O `nextStep` é calculado no servidor a partir desses estados — `PENDING_UPDATE` também leva ao ONBOARDING (a tela indica os novos documentos a submeter). O SPA não carrega regra de fluxo.
 
-## 6. Perguntas em aberto
+## 6. Decisões registradas (respostas do dono)
 
-1. **Lista de dados e documentos por tipo de perfil.** Não chegou. Pode colar? Com ela eu semeio o catálogo; sem ela, só os 6 tipos.
-2. **Sem senha (D1)?** E-mail + código para entrar sempre, com refresh de 7 dias. Alguma razão para exigir senha ou 2FA já no MVP (principalmente para o admin)?
-3. **Aprovação manual (D12).** Enquanto a empresa está em `PENDING_DOCUMENTS` ou `UNDER_REVIEW`, ela já pode usar alguma coisa da plataforma ou só vê o status?
-4. **Troca de tipo de perfil.** Proposta: livre até submeter; depois só o admin troca. Ok?
-5. **Mudou a regra com empresas já aprovadas** (novo documento obrigatório)? Proposta: ninguém é afetado sozinho, e o admin usa "reabrir" por empresa.
-6. **Um tipo por empresa?** Hoje sim (também há 1 papel por carteira on-chain). Uma cooperativa que também transporta teria 2 cadastros?
-7. **Nome completo e razão social:** confirmo pedir os dois, com a razão social pré-preenchida pela consulta de CNPJ quando disponível?
-8. **Rótulos em vários idiomas** (o Core Web tem pt-BR, en-US e es-ES)? Proposta: só pt-BR no MVP.
-9. **Hospedagem e domínio da API.** Condiciona o cookie de refresh (D2), o CORS e como a chave chega ao deploy.
-10. **Chave JWT.** Confirmo: gerada localmente por script, fora do git e injetada no deploy? Ou prefere versionar um par só de dev?
+| # | Pergunta | Decisão |
+|---|---|---|
+| 1 | Lista de dados/documentos por perfil | Recebida — virou a matriz do anexo D (seed por migration) |
+| 2 | Senha ou 2FA | Sem senha: OTP de e-mail para todo mundo, inclusive admin |
+| 3 | Acesso antes da aprovação | **Só o status.** Admin da Ecolchain valida os documentos e aprova |
+| 4 | Troca de tipo de perfil | Livre até submeter; os requisitos são recalculados conforme os tipos |
+| 5 | Requisito novo com empresa aprovada | **Valem.** A empresa vai para `PENDING_UPDATE` e a tela indica os novos documentos (ver 5.3) |
+| 6 | Vários tipos por empresa | **Sim** (`COMPANY_PROFILE`), embora raro |
+| 7 | Nome completo e razão social | Os dois (D10) |
+| 8 | Idiomas dos rótulos | **pt-BR e en** — colunas `label_pt`/`label_en` (e `help_pt`/`help_en`) |
+| 9 | Hospedagem | Máquina OCI depois; por ora tudo local — cookie/CORS parametrizados |
+| 10 | Chaves JWT | **Dev e prod commitadas** em `keys/` (débito técnico assumido; C.1) |
+
+### Pendências menores (não bloqueiam)
+
+- Você mandou uma **senha** para o admin (`ecolchain1234@`), mas o login é sem senha (código por e-mail). Mantemos OTP para o admin também — certo? Se quiser senha, vira decisão nova (e bem mais superfície).
+- O e-mail é `leandroluz201616@mail.com` mesmo? Confirmo se não era `@gmail.com` antes de semear.
+- Gov.br / SINIR / SIGOR: **não há integração** no MVP — os números/comprovantes são dados e documentos conferidos manualmente pelo admin na revisão.
+- Documentos "da diretoria" e "dos sócios" entram como **1 documento consolidado** cada (`board_personal_docs`, `partners_personal_docs`). Se preferir um atributo por item (RG, CPF, comprovante), é só ajustar o seed — o modelo já permite.
 
 ## 7. Entrega em fatias
 
-Cada fatia começa pelo contrato OpenAPI (API-first, como definido no `AGENTS.md`), depois as interfaces geradas, depois a implementação e os testes.
+Cada fatia começa pelo trecho correspondente do contrato OpenAPI (API-first, como definido no `AGENTS.md`), depois as interfaces geradas, depois a implementação e os testes. Cada use case nasce com seu `docs/features/<nome>.md`.
 
-1. **Auth:** migrations de identidade, OTP com Mailer, JWT (com o script de geração de chaves), `/auth/*` e `/me`, com testes.
-2. **Catálogo e cadastro:** catálogo e endpoints de admin, `PUT /me/company`, schema dinâmico, atributos `DATA`, seed dos 6 tipos (Gerador, Transportador, Cooperativa, CleanTech, Recicladora, Higienizadora) por migration.
-3. **Documentos e revisão:** entidade `DOCUMENT`, presign com prefixo e checagem de dono (substitui o `DevDocumentResource`), `confirm`, `submit` e `review`.
-4. **Em paralelo:** hospedagem da API no infra, aplicar o módulo de Email Delivery e uma coleção Bruno com os fluxos.
+1. **Base:** `openapi/management-api.yaml` (seções de auth e `/me`), plugin do OpenAPI Generator no `pom.xml`, envelope `ApiResponse` + mappers de erro, esqueleto de pacotes hexagonais.
+2. **Auth:** migrations de identidade (`ACCOUNT`, `EMAIL_OTP`, `REFRESH_TOKEN`, seed do admin), chaves RSA em `keys/` com exceção do `.gitignore`, use cases de OTP/JWT, `/auth/*` e `/me`, com testes (`MockMailbox`).
+3. **Catálogo e cadastro:** migrations do catálogo + seeds dos 6 tipos com a matriz do anexo D, use cases de admin (tipo, fluxo, atributo), `PUT /me/company` (multi-perfil), `GET /me/onboarding` com o schema unificado.
+4. **Documentos e revisão:** entidade `DOCUMENT`, presign com prefixo e checagem de dono (substitui o `DevDocumentResource`), `confirm`, `submit`, `review` e o efeito `PENDING_UPDATE` ao publicar requisito novo; auditoria.
+5. **Em paralelo:** coleção Bruno com os fluxos; o Management Web (repo separado) já consome o contrato; hospedagem OCI e aplicação do módulo de Email Delivery quando você mexer na infra.
 
 ---
 
@@ -327,7 +372,8 @@ Cada fatia começa pelo contrato OpenAPI (API-first, como definido no `AGENTS.md
 erDiagram
     ACCOUNT ||--o{ COMPANY_MEMBER : participa
     COMPANY ||--o{ COMPANY_MEMBER : tem
-    PROFILE_TYPE ||--o{ COMPANY : classifica
+    COMPANY ||--o{ COMPANY_PROFILE : escolhe
+    PROFILE_TYPE ||--o{ COMPANY_PROFILE : "escolhida por"
     PROFILE_TYPE ||--o{ ONBOARDING_STEP : define
     ONBOARDING_STEP ||--o{ STEP_ATTRIBUTE : agrupa
     ATTRIBUTE_DEFINITION ||--o{ STEP_ATTRIBUTE : "entra em"
@@ -354,13 +400,18 @@ erDiagram
         uuid id PK
         string cnpj UK "14 caracteres alfanuméricos, único entre as não rejeitadas"
         string legal_name "razão social"
-        uuid profile_type_id FK
         string status "ver 5.3"
+    }
+    COMPANY_PROFILE {
+        uuid company_id FK
+        uuid profile_type_id FK
+        timestamp created_at
     }
     PROFILE_TYPE {
         uuid id PK
         string code UK "GERADOR, COOPERATIVA, ..."
-        string name
+        string name_pt
+        string name_en
         boolean active
         number position
     }
@@ -368,15 +419,18 @@ erDiagram
         uuid id PK
         uuid profile_type_id FK
         string code
-        string title
+        string title_pt
+        string title_en
         number position
     }
     ATTRIBUTE_DEFINITION {
         uuid id PK
         string code UK "snake_case estável"
         string kind "DATA ou DOCUMENT"
-        string label
-        string help
+        string label_pt
+        string label_en
+        string help_pt
+        string help_en
         json rules "input, regex, maxLength, allowedExtensions, maxBytes"
         boolean active
     }
@@ -410,9 +464,10 @@ Fora do diagrama: `EMAIL_OTP` (e-mail, hash do código, expiração, tentativas,
 
 Pontos de projeto:
 
-- O **atributo é reutilizável**: o mesmo `licenca_operacao` pode entrar no fluxo de vários tipos, cada um com seu `required` e sua posição. A definição é **global**: mudar `label` ou `rules` afeta todos os tipos que usam o atributo.
+- O **atributo é reutilizável**: o mesmo `env_operating_license` pode entrar no fluxo de vários tipos, cada um com seu `required` e sua posição. A definição é **global**: mudar `label_*` ou `rules` afeta todos os tipos que usam o atributo.
+- **Multi-perfil:** a empresa escolhe 1..N tipos (`COMPANY_PROFILE`); o schema servido é a união dos passos/atributos dos tipos, **sem repetir** um atributo já presente (dedup por `code`). Troca de tipos é livre até submeter e recalcula os requisitos (decisão 4).
 - Tirar um atributo do fluxo **não apaga** valores já coletados (ficam para auditoria).
-- Mudança de fluxo vale para quem ainda não submeteu. Empresa já aprovada não é afetada, a menos que o admin use "reabrir" (pergunta 5).
+- Mudança de fluxo vale para quem ainda não submeteu **e** empurra empresas `APPROVED` do tipo alterado para `PENDING_UPDATE`, que resubmetem os itens novos (decisão 5, ver 5.3).
 - `code` do atributo é a identificação estável (imutável) usada nos endpoints. Não confundir com a `objectKey` do bucket.
 - Num atributo `DOCUMENT`, o valor guarda só a `objectKey` (string, como pedido). Os metadados do arquivo (nome, tipo, tamanho, estado do upload) ficam em `DOCUMENT`.
 - A regex do admin só roda depois de checar `maxLength` (entrada limitada), para evitar ReDoS.
@@ -426,61 +481,90 @@ PUT /admin/profile-types/COOPERATIVA/flow
 
 ```json
 {
-  "steps": [
+  "passos": [
     {
-      "code": "licencas",
-      "title": "Licenças e autorizações",
-      "attributes": [
+      "codigo": "licencas",
+      "tituloPt": "Licenças e autorizações",
+      "tituloEn": "Licenses and authorizations",
+      "atributos": [
         {
-          "code": "licenca_operacao",
-          "required": true,
-          "definition": {
-            "kind": "DOCUMENT",
-            "label": "Licença de operação",
-            "help": "PDF de até 10 MB",
-            "rules": { "allowedExtensions": ["pdf"], "maxBytes": 10485760 }
+          "codigo": "env_operating_license",
+          "obrigatorio": true,
+          "definicao": {
+            "tipo": "DOCUMENT",
+            "rotuloPt": "Licença Ambiental de Operação (LAO)",
+            "rotuloEn": "Environmental Operating License",
+            "ajudaPt": "PDF de até 10 MB",
+            "ajudaEn": "PDF up to 10 MB",
+            "regras": { "extensoesPermitidas": ["pdf"], "tamanhoMaxBytes": 10485760 }
           }
         },
-        { "code": "capacidade_mensal_kg", "required": false }
+        { "codigo": "monthly_capacity_kg", "obrigatorio": false }
       ]
     }
   ]
 }
 ```
 
-`definition` é opcional: se o atributo já existe e a chamada não traz definição, ele é reaproveitado; se traz, é criado ou atualizado (upsert por `code`). O `PUT` substitui o fluxo inteiro em uma transação, o que permite versionar o JSON de cada tipo no Git e reaplicar em dev e prod. `POST /admin/profile-types` aceita o mesmo `steps`, então criar o tipo e seus atributos também é uma chamada só.
+`definicao` é opcional: se o atributo já existe e a chamada não traz definição, ele é reaproveitado; se traz, é criado ou atualizado (upsert por `codigo`). O `PUT` substitui o fluxo inteiro em uma transação, o que permite versionar o JSON de cada tipo no Git e reaplicar em dev e prod. `POST /admin/profile-types` aceita o mesmo `passos`, então criar o tipo e seus atributos também é uma chamada só.
 
 ### Exemplo (ilustrativo): o que o SPA recebe em `GET /me/onboarding`
 
 ```json
 {
-  "status": "PENDING_DOCUMENTS",
-  "profileType": { "code": "COOPERATIVA", "name": "Cooperativa" },
-  "steps": [
-    {
-      "code": "licencas",
-      "title": "Licenças e autorizações",
-      "attributes": [
-        {
-          "code": "licenca_operacao",
-          "kind": "DOCUMENT",
-          "label": "Licença de operação",
-          "help": "PDF de até 10 MB",
-          "required": true,
-          "rules": { "allowedExtensions": ["pdf"], "maxBytes": 10485760 },
-          "value": null,
-          "review": null
-        }
-      ]
-    }
+  "data": {
+    "status": "PENDING_DOCUMENTS",
+    "tiposPerfil": [{ "codigo": "COOPERATIVA", "nome": "Cooperativa" }],
+    "passos": [
+      {
+        "codigo": "licencas",
+        "titulo": "Licenças e autorizações",
+        "atributos": [
+          {
+            "codigo": "env_operating_license",
+            "tipo": "DOCUMENT",
+            "rotulo": "Licença Ambiental de Operação (LAO)",
+            "ajuda": "PDF de até 10 MB",
+            "obrigatorio": true,
+            "regras": { "extensoesPermitidas": ["pdf"], "tamanhoMaxBytes": 10485760 },
+            "valor": null,
+            "revisao": null
+          }
+        ]
+      }
+    ],
+    "progresso": { "totalObrigatorios": 1, "preenchidosObrigatorios": 0 }
+  },
+  "links": [
+    { "rel": "submit", "href": "/me/onboarding/submit", "metodo": "POST" }
   ],
-  "progress": { "requiredTotal": 1, "requiredFilled": 0 }
+  "erros": []
+}
+```
+
+E um erro no mesmo envelope (`erros[]` = Problem Details RFC 9457 + `code`/`campo`):
+
+```json
+{
+  "data": null,
+  "links": [],
+  "erros": [
+    {
+      "type": "urn:ecolchain:problem:cnpj-in-use",
+      "title": "CNPJ já cadastrado",
+      "status": 422,
+      "detail": "Este CNPJ já está em uso por outra empresa. Fale com a Ecolchain.",
+      "instance": "/me/company",
+      "code": "CNPJ_IN_USE",
+      "campo": "cnpj"
+    }
+  ]
 }
 ```
 
 ## Anexo B. Endpoints
 
-Paths em inglês, como o código atual. Esta tabela é o rascunho dos recursos para o contrato OpenAPI, que é escrito **primeiro** (API-first, ver `AGENTS.md`); as interfaces JAX-RS saem do OpenAPI Generator.
+Paths em inglês, como o código atual. Esta tabela é o rascunho dos recursos para o contrato OpenAPI, que é escrito **primeiro** (API-first, ver `AGENTS.md`); as interfaces JAX-RS saem do OpenAPI Generator. Campos de request/response em pt-BR camelCase e toda resposta envelopada em `{data, links, erros}` (D13, 3.2).
 
 **Públicos**
 
@@ -523,29 +607,32 @@ Paths em inglês, como o código atual. Esta tabela é o rascunho dos recursos p
 
 ### C.1 Chaves JWT no MVP
 
-JWT não precisa de certificado X.509, só do par de chaves. O `.gitignore` já bloqueia `*.pem` e `*.key`.
+JWT não precisa de certificado X.509, só do par de chaves. **Decisão do dono (MVP): os pares de dev e prod ficam commitados em `keys/`** — a privada inclusive. O `.gitignore` (que hoje bloqueia `*.pem`/`*.key`) ganha exceção para `keys/`, e o `ConfigGuardTest` faz allow-list dessa pasta.
 
 ```bash
 mkdir -p keys
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out keys/jwt-private.pem
-openssl pkey -in keys/jwt-private.pem -pubout -out keys/jwt-public.pem
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out keys/jwt-private-dev.pem
+openssl pkey -in keys/jwt-private-dev.pem -pubout -out keys/jwt-public-dev.pem
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out keys/jwt-private-prod.pem
+openssl pkey -in keys/jwt-private-prod.pem -pubout -out keys/jwt-public-prod.pem
 ```
 
-Configuração (exemplo; validar os caminhos na implementação). Os caminhos vêm do `.env` (gitignored), como as credenciais S3:
+Configuração (exemplo; validar os caminhos na implementação). As chaves de prod ficam sob o profile `%prod`:
 
 ```properties
-mp.jwt.verify.publickey.location=${JWT_PUBLIC_KEY_LOCATION}
 mp.jwt.verify.issuer=ecolchain-management-api
 mp.jwt.verify.audiences=ecolchain-app
-smallrye.jwt.sign.key.location=${JWT_PRIVATE_KEY_LOCATION}
 smallrye.jwt.new-token.issuer=ecolchain-management-api
 smallrye.jwt.new-token.audience=ecolchain-app
 smallrye.jwt.new-token.lifespan=900
+%dev.mp.jwt.verify.publickey.location=keys/jwt-public-dev.pem
+%dev.smallrye.jwt.sign.key.location=keys/jwt-private-dev.pem
+%prod.mp.jwt.verify.publickey.location=keys/jwt-public-prod.pem
+%prod.smallrye.jwt.sign.key.location=keys/jwt-private-prod.pem
 ```
 
-- **Local:** `keys/` na raiz do projeto, gerado por um script. Em dev e test, se nenhuma chave estiver configurada, o Quarkus gera um par efêmero (os tokens morrem a cada restart), por isso o par fixo.
-- **Deploy:** a chave entra por arquivo montado (secret ou volume) ou por variável de ambiente. **Nunca dentro do jar ou da imagem**, e a privada nunca no git: quem a tem emite token como qualquer conta, inclusive admin (por isso `/admin/**` também confere o papel no banco).
-- **Rotação (evolução):** `kid` no header já no MVP; na troca, o JWKS publica as duas chaves por um tempo. Depois, OCI Vault.
+- **Risco assumido:** quem tem acesso ao repo assina token de qualquer conta, inclusive admin — por isso `/admin/**` também confere o papel no banco (D4) e `kid` já sai no header para a rotação futura não quebrar tokens em voo.
+- **Débito técnico registrado:** na evolução, as chaves saem do repo para secret montado no deploy e depois OCI Vault, com JWKS publicando chaves sobrepostas durante a rotação. O `keys/` continua útil só para dev.
 
 ### C.2 E-mail (OCI Email Delivery)
 
@@ -579,6 +666,103 @@ Checklist:
 - Logs JSON (já em uso): nunca registrar OTP, tokens ou e-mail completo.
 - Toda mudança de catálogo e toda revisão grava `AUDIT_LOG`.
 - LGPD: aceite de termos versionado com data, finalidade e retenção definidas, acesso aos documentos só do titular e do admin.
-- Testes: `@QuarkusTest` com `MockMailbox`; validador de CNPJ com o exemplo oficial da Receita (`12.ABC.345/01DE-35`); `ConfigGuardTest` estendido para garantir que nenhuma chave ou segredo entra no repo.
+- Testes: `@QuarkusTest` com `MockMailbox`; validador de CNPJ com o exemplo oficial da Receita (`12.ABC.345/01DE-35`); `ConfigGuardTest` com allow-list de `keys/` (chaves commitadas por decisão do dono, C.1) — os demais segredos continuam bloqueados.
 
 CNPJ: módulo 11 sobre os 12 primeiros caracteres, cada um convertido por `ASCII − 48`, pesos de 2 a 9 da direita para a esquerda. Armazenar como `VARCHAR2(14)` em maiúsculas, nunca como número. A consulta pública é só conveniência e nunca bloqueia: os provedores podem ainda não aceitar o formato alfanumérico.
+
+## Anexo D. Matriz de atributos por tipo de perfil (seed)
+
+Traduzida da lista enviada. `tipo` = `DATA` (texto) ou `DOCUMENT` (arquivo no bucket); `obrig.` = obrigatório no submit. Atributos repetidos entre tipos são **compartilhados** — empresa com vários perfis preenche uma vez só (dedup por `code`). Documentos usam `regras.extensoesPermitidas = ["pdf","jpg","png"]` salvo indicação em contrário. Sem integração com Gov.br/SINIR/SIGOR no MVP: números e comprovantes são conferidos manualmente na revisão (D12).
+
+**Atributos compartilhados** (definidos uma vez, usados em vários tipos):
+
+| code | tipo | rótulo pt |
+|---|---|---|
+| `full_address` | DATA | Endereço completo |
+| `state_registration` | DATA | Inscrição Estadual (IE) |
+| `municipal_registration` | DATA | Inscrição Municipal (IM) |
+| `primary_cnae` | DATA | CNAE principal |
+| `secondary_cnaes` | DATA | CNAEs secundários |
+| `sinir_number` | DATA | Registro SINIR / MTR Nacional |
+| `sigor_number` | DATA | Registro SIGOR / MTR SP (CETESB) |
+| `responsible_cpf` | DATA | CPF do responsável legal |
+| `corporate_email` | DATA | E-mail corporativo |
+| `phone` | DATA | Telefone |
+
+**GERADOR** — Importadora / cliente solicitante (passos: `dados_empresa`, `cadastros`, `responsavel`)
+
+| code | tipo | obrig. |
+|---|---|---|
+| `full_address` | DATA | sim |
+| `state_registration` | DATA | sim |
+| `municipal_registration` | DATA | não |
+| `primary_cnae` | DATA | sim |
+| `secondary_cnaes` | DATA | não |
+| `sinir_number` | DATA | sim |
+| `sigor_number` | DATA | não (só SP; admin ajusta por estado) |
+| `responsible_cpf` | DATA | sim (vínculo Gov.br conferido na revisão) |
+| `corporate_email` | DATA | não |
+| `phone` | DATA | sim |
+
+**TRANSPORTADOR** (passo: `cadastros`)
+
+| code | tipo | obrig. |
+|---|---|---|
+| `sinir_number` | DATA | sim (CNPJ ativo e regularizado) |
+| `sigor_number` | DATA | não |
+
+Nota: CNH, documento do veículo/placa, MTR e MOPP/ANTT são **documentos por carga** (operação), não de onboarding — fora por decisão do dono ("sem motoristas ainda").
+
+**COOPERATIVA** (passos: `abertura_legal`, `cadastros_operacao`, `responsavel`)
+
+| code | tipo | obrig. |
+|---|---|---|
+| `incorporation_minutes` | DOCUMENT | sim — Ata da Assembleia Geral de Constituição |
+| `bylaws` | DOCUMENT | sim — Estatuto Social |
+| `founding_members_list` | DOCUMENT | sim — Lista de Associados Fundadores |
+| `board_personal_docs` | DOCUMENT | sim — RG, CPF e comprovante de residência da diretoria (consolidado) |
+| `catadores_sinir_registry` | DATA | sim — habilitação no Módulo Catadores do SINIR |
+| `infrastructure_declaration` | DOCUMENT | sim — comprovação de galpão/equipamentos de triagem |
+| `responsible_cpf` | DATA | sim |
+
+**CLEANTECH** (passos: `abertura_legal`, `cadastros`, `responsavel`)
+
+| code | tipo | obrig. |
+|---|---|---|
+| `articles_of_association` | DOCUMENT | sim — Contrato Social (LTDA / Marco Legal das Startups) |
+| `partners_personal_docs` | DOCUMENT | sim — documentos pessoais dos sócios (consolidado) |
+| `business_permit` | DOCUMENT | sim — Alvará de Funcionamento |
+| `primary_cnae` | DATA | sim |
+| `secondary_cnaes` | DATA | não |
+| `state_registration` | DATA | não — só se comercializa subprodutos |
+| `env_operating_license` | DOCUMENT | não — LAO ou dispensa, se houver laboratório/pátio próprio |
+| `sinir_api_registration` | DATA | não — cadastro de empresa contratada/usuário API no SINIR |
+| `responsible_cpf` | DATA | sim |
+
+**RECICLADORA** — destinador final (passos: `licencas`, `fiscal_operacao`)
+
+| code | tipo | obrig. |
+|---|---|---|
+| `env_operating_license` | DOCUMENT | sim — LAO ou dispensa do órgão estadual (ex.: CETESB) |
+| `env_license_number` | DATA | sim — nº da LAO (obrigatório p/ recebimento no MTR) |
+| `env_license_expiry` | DATA | sim — validade da LAO |
+| `cdf_capability` | DATA | sim — declaração de que emite CDF vinculado a MTRs |
+| `inbound_invoice` | DOCUMENT | sim — NF de entrada (exemplar; créditos e logística reversa) |
+| `primary_cnae` | DATA | sim |
+| `secondary_cnaes` | DATA | não |
+
+**HIGIENIZADORA** — reuso de garrafas (passos: `licencas`, `fiscal`)
+
+| code | tipo | obrig. |
+|---|---|---|
+| `env_license_hygiene` | DOCUMENT | sim — LAO/dispensa **com autorização explícita** de lavagem/higienização/reuso |
+| `health_permit` | DOCUMENT | sim — CMVS / Alvará Sanitário |
+| `state_registration` | DATA | sim |
+| `state_registration_proof` | DOCUMENT | sim — comprovante de IE |
+
+Notas:
+
+- `env_license_hygiene` é atributo separado do `env_operating_license` genérico porque exige autorização específica de lavagem — semântica diferente, não só rótulo.
+- Condicionais da lista ("se comercializa subprodutos", "se tiver pátio próprio") entram como `obrigatorio: false` no seed. Exigência condicional de verdade (checkbox que liga obrigação) é fase 2 — o modelo comporta.
+- Código de resíduo (ex.: 15 01 07) e tecnologia no MTR são escolhas **por operação**, não de onboarding.
+- A matriz é só o seed: o admin muda qualquer linha via `PUT /admin/profile-types/{code}/flow`, sem deploy.

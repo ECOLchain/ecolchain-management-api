@@ -32,10 +32,29 @@ Infra (OCI) provisionada em repo separado: `../ecolchain-infra-general`, root `i
 - `terraform output -json` inclui `schema_bootstrap_sql` com senhas em plaintext — não colar a saída crua em logs/PRs.
 - DevServices globais desligados (`quarkus.devservices.enabled=false`, Docker indisponível); observability DevService (LGTM) desligado em `%dev`.
 
-## Próxima fase — API-first (direção definida)
+## Arquitetura e padrões de código (decisões do dono)
 
-1. Definir o contrato OpenAPI **primeiro** (`openapi/` ou similar).
-2. Gerar interfaces via plugin do OpenAPI Generator.
-3. Implementar as interfaces — `DevDocumentResource` é temporário e será substituído; upload-url provavelmente vira `POST` (cria intenção de upload).
-4. Entidade `Document` (Panache) + migration real entram junto com o contrato.
-5. Padrões de backend (pacotes, erro, auth) saem dessa fase — ver `docs/proposta-auth-onboarding.md`.
+Detalhes e justificativas em `docs/proposta-auth-onboarding.md`.
+
+- **API-first**: o contrato OpenAPI (`openapi/management-api.yaml`) é escrito primeiro; as interfaces JAX-RS são geradas pelo OpenAPI Generator (plugin Maven); os controllers implementam as interfaces geradas. Nunca editar código gerado.
+- **Arquitetura hexagonal**: `domain` (regras, sem framework) / `application` (use cases + ports `in`/`out`) / `adapter` (`in.web` = controllers REST, `out.persistence` = Panache, `out.storage` = S3, `out.mail` = SMTP). Controller só traduz HTTP↔use case; domínio não conhece Quarkus.
+- **Clean Code e SOLID estritos**; sem gambiarras.
+- **Idiomas**: código em inglês; campos do contrato (request e response) em **pt-BR camelCase** (ex.: `razaoSocial`, `nomeCompleto`). Paths dos endpoints em inglês.
+- **Sem `*Dto`**: payloads são `<Nome>Request` / `<Nome>Response`, em pacotes `request`/`response` da feature.
+- **Envelope obrigatório** em toda resposta: `{ "data": {} | null, "links": [], "erros": [] }`. Cada item de `erros` é um Problem Details **RFC 9457** (`type`, `title`, `status`, `detail`, `instance`) + extensões `code` (estável, ex.: `CNPJ_IN_USE`) e `campo` (opcional). Mapeamento centralizado via `ExceptionMapper`/`@ServerExceptionMapper` (equivalente ao `@ControllerAdvice` do Spring). Status HTTP continua semântico (202, 400, 401...).
+- **Doc por use case**: cada feature tem `docs/features/<nome>.md` descrevendo o que faz e como funciona; a classe/método referencia o arquivo no Javadoc. Mudou o código → atualiza o doc (de/para obrigatório).
+- **Dinamismo**: regra de negócio configurável fica no banco (catálogo/fluxos), nunca hardcoded.
+
+## Auth e onboarding (decisões)
+
+- Login por OTP de e-mail (sem senha) para empresas e admin; JWT RS256 15 min + refresh token rotativo (cookie HttpOnly).
+- Admin inicial: `leandroluz201616@mail.com` semeado por migration; novos admins via INSERT no banco por ora.
+- Empresa pode ter **N tipos de perfil** (`COMPANY_PROFILE`); o onboarding é a união dos fluxos dos tipos escolhidos.
+- Chaves JWT de dev e prod **commitadas** em `keys/` (decisão explícita do dono — é MVP). `.gitignore` abre exceção para `keys/*.pem`; `ConfigGuardTest` faz allow-list dessa pasta e continua bloqueando outros segredos. Débito técnico registrado: mover para secret/OCI Vault na primeira revisão de segurança.
+
+## Próxima fase — execução
+
+1. Escrever o contrato OpenAPI (ver `docs/proposta-auth-onboarding.md`, anexo B).
+2. Configurar o plugin do OpenAPI Generator e gerar as interfaces.
+3. Implementar os controllers — `DevDocumentResource` é temporário e será substituído; upload-url é `POST` (cria intenção de upload, entidade `DOCUMENT`).
+4. Migrations Flyway: identidade, catálogo, empresa, documento, auditoria + seeds (6 tipos de perfil com a matriz de atributos do anexo D da proposta, admin inicial).

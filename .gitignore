@@ -1,0 +1,25 @@
+# Build
+target/
+.quarkus/
+
+# Local env / secrets
+.env
+!.env.example
+env/
+*.pem
+*.key
+
+# Maven wrapper (keep the properties tracked)
+!.mvn/wrapper/maven-wrapper.properties
+
+# IDE
+*.iml
+.idea/
+.vscode/
+.factorypath
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store

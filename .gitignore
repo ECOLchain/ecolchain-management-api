@@ -8,6 +8,8 @@ target/
 env/
 *.pem
 *.key
+# Excecao aprovada pelo dono (MVP): par de chaves JWT commitado — debito tecnico registrado (proposta C.1)
+!keys/*.pem
 
 # Maven wrapper (keep the properties tracked)
 !.mvn/wrapper/maven-wrapper.properties

@@ -48,7 +48,7 @@ Detalhes e justificativas em `docs/proposta-auth-onboarding.md`.
 ## Auth e onboarding (decisões)
 
 - Login por OTP de e-mail (sem senha) para empresas e admin; JWT RS256 15 min + refresh token rotativo (cookie HttpOnly).
-- Admin inicial: `leandroluz201616@mail.com` semeado por migration; novos admins via INSERT no banco por ora.
+- Admin inicial: `leandroluz201616@gmail.com` semeado por migration; novos admins via INSERT no banco por ora.
 - Empresa pode ter **N tipos de perfil** (`COMPANY_PROFILE`); o onboarding é a união dos fluxos dos tipos escolhidos.
 - Chaves JWT de dev e prod **commitadas** em `keys/` (decisão explícita do dono — é MVP). `.gitignore` abre exceção para `keys/*.pem`; `ConfigGuardTest` faz allow-list dessa pasta e continua bloqueando outros segredos. Débito técnico registrado: mover para secret/OCI Vault na primeira revisão de segurança.
 

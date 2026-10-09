@@ -1,0 +1,114 @@
+name: CI & Auto-PR (Feature -> Develop)
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'feat/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  OCIR_REGISTRY: gru.ocir.io
+  OCIR_REPO: gru.ocir.io/grmykw8bmw9d/management-api
+  PREVIEW_URL: https://api-dev.ecolchain.com
+  CORS_ORIGIN: https://manage-dev.ecolchain.com
+
+jobs:
+  build-deploy-pr:
+    name: Verify, Push OCIR (dev) & Auto PR to Develop
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Run Verify (tests + checks)
+        run: ./mvnw -B -ntp clean verify
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login no OCIR
+        run: |
+          echo "${{ secrets.OCIR_AUTH_TOKEN }}" | docker login "$OCIR_REGISTRY" \
+            -u "${{ secrets.OCIR_USERNAME }}" --password-stdin
+
+      # Deploy converge sozinho: a VM puxa a tag :dev a cada ~2min (systemd timer).
+      - name: Build & Push imagem linux/arm64 (dev + git-sha)
+        run: |
+          docker buildx build --platform linux/amd64 \
+            -t "$OCIR_REPO:dev" \
+            -t "$OCIR_REPO:${{ github.sha }}" \
+            --push .
+
+      - name: Smoke test dev (health + profile-types + preflight CORS)
+        run: |
+          echo "Aguardando deploy convergir (timer de pull ~2min)..."
+          ok=0
+          for i in $(seq 1 40); do
+            h=$(curl -s -o /dev/null -w '%{http_code}' "$PREVIEW_URL/q/health" || true)
+            t=$(curl -s -o /dev/null -w '%{http_code}' "$PREVIEW_URL/public/profile-types" || true)
+            echo "tentativa $i: /q/health=$h /public/profile-types=$t"
+            if [ "$h" = 200 ] && [ "$t" = 200 ]; then ok=1; break; fi
+            sleep 10
+          done
+          if [ "$ok" != 1 ]; then
+            echo "::error::Smoke falhou: API dev nao respondeu 200 em ~7min"
+            exit 1
+          fi
+          curl -sf -X OPTIONS "$PREVIEW_URL/public/profile-types" \
+            -H "Origin: $CORS_ORIGIN" \
+            -H "Access-Control-Request-Method: GET" \
+            -D "$RUNNER_TEMP/preflight.h" -o /dev/null
+          grep -qi "access-control-allow-origin: $CORS_ORIGIN" "$RUNNER_TEMP/preflight.h" \
+            || { echo "::error::Preflight CORS sem allow-origin para $CORS_ORIGIN"; cat "$RUNNER_TEMP/preflight.h"; exit 1; }
+          grep -qi "access-control-allow-credentials: true" "$RUNNER_TEMP/preflight.h" \
+            || { echo "::error::Preflight CORS sem allow-credentials"; cat "$RUNNER_TEMP/preflight.h"; exit 1; }
+          echo "Smoke OK: /q/health + /public/profile-types + preflight CORS credenciado"
+
+      - name: Auto Create or Update PR to Develop
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+
+          PR_BODY="✨ **Preview da Feature publicado no ambiente DEV com sucesso!**
+
+          🔗 **API de Preview:** [$PREVIEW_URL]($PREVIEW_URL)
+          🩺 **Health:** [$PREVIEW_URL/q/health]($PREVIEW_URL/q/health)
+
+          ---
+          PR automático gerado pelo pipeline de CI após \`verify\`, push da imagem \`dev\`+\`${{ github.sha }}\` no OCIR e smoke test verde em \`$BRANCH_NAME\`."
+
+          EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --base develop --json number --jq '.[0].number')
+
+          if [ -z "$EXISTING_PR" ]; then
+            echo "Criando novo PR de $BRANCH_NAME para develop..."
+            gh pr create \
+              --head "$BRANCH_NAME" \
+              --base develop \
+              --title "feat: $BRANCH_NAME" \
+              --body "$PR_BODY" || echo "⚠️ Para criar PRs automáticos via GitHub Actions, ative a opção 'Allow GitHub Actions to create and approve pull requests' em Settings -> Actions -> General."
+          else
+            echo "Atualizando PR #$EXISTING_PR..."
+            gh pr edit "$EXISTING_PR" --body "$PR_BODY" || true
+            gh pr comment "$EXISTING_PR" --body "🔄 **Novo Deploy de Preview Atualizado!**\n\n🔗 **API:** [$PREVIEW_URL]($PREVIEW_URL)" || true
+          fi

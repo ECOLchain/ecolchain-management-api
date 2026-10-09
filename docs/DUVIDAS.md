@@ -19,3 +19,14 @@ Dúvidas registradas pela sessão de implementação enquanto o usuário estava 
 - Documentos: **um atributo por item**; cada tipo de perfil escolhe quais atributos solicita (editável via endpoint).
 - Condicionais ("se comercializa subprodutos" etc.) entram como **opcionais**; motorista/veículo fora do onboarding.
 - Pré-aprovação: empresa só vê status; revisão manual do admin.
+
+## Deploy OCI (VM A1.Flex + OCIR + LB)
+
+- [ ] **Hostname prod = `api-prod.ecolchain.com`** (não `api.ecolchain.com`) — confirmado com `api-base.ts`/`AMBIENTES.md` do management-web, que já injeta `NEXT_PUBLIC_API_URL=https://api-prod.ecolchain.com` no build de prod.
+- [ ] **Deploy converge por polling**: CI só faz `docker buildx build --push` da tag (`:dev`, `:prod`, `:<git-sha>`); um timer systemd na VM puxa a cada ~2min e sobe o container novo. Sem SSH nem self-hosted runner no caminho do deploy (decisão detalhada no DUVIDAS do ecolchain-infra-general).
+- [ ] **Imagem só linux/arm64** — a VM é Ampere A1 (aarch64). O Dockerfile é multi-stage: o stage `maven` roda em `$BUILDPLATFORM` (x86 do runner, rápido) e o runtime `ubi9/openjdk-25-runtime` sai em arm64. Multi-arch no OCIR fica como melhoria futura se aparecer consumer amd64.
+- [ ] **`./mvnw verify` roda duas vezes em CI** (step explícito + dentro do Dockerfile com `-DskipTests`). Aceito para manter o Dockerfile auto-suficiente (`docker build` fora da esteira funciona igual); a etapa de testes no Dockerfile é pulada (`-DskipTests`) para não duplicar testes.
+- [ ] **CORS por profile**: dev ganhou `https://manage-dev.ecolchain.com` (localhosts mantidos para dev local); prod ganhou `https://manage.ecolchain.com` — o default sem profile continua sem origens. Credenciais já estavam ligadas (cookie de refresh).
+- [ ] **Mailer dev mockado** via `QUARKUS_MAILER_MOCK=true` no container `api-dev` (env file gerado pelo Ansible); prod usa `QUARKUS_MAILER_USERNAME/PASSWORD` vindo do remote state `oci/email-delivery`. Senha SMTP nova fica como pendência caso o sender ainda não exista.
+- [ ] **Secrets novos da esteira** (bot não consegue `gh secret set`): `OCIR_USERNAME` (`<namespace>/<usuario>`) e `OCIR_AUTH_TOKEN` — saem de `terraform output` no root `management-api-runtime` do infra-general.
+- [ ] **Health check**: LB bate em `GET /q/health` (smallrye-health já no pom, path já público no `AuthFilter`); smoke da esteira cobre `/public/profile-types` + preflight CORS credenciado.

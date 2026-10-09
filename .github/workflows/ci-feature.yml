@@ -53,7 +53,7 @@ jobs:
       # Deploy converge sozinho: a VM puxa a tag :dev a cada ~2min (systemd timer).
       - name: Build & Push imagem linux/arm64 (dev + git-sha)
         run: |
-          docker buildx build --platform linux/arm64 \
+          docker buildx build --platform linux/amd64 \
             -t "$OCIR_REPO:dev" \
             -t "$OCIR_REPO:${{ github.sha }}" \
             --push .

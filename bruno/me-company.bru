@@ -1,0 +1,16 @@
+meta { name: Upsert empresa, type: http, seq: 8 }
+put { url: {{baseUrl}}/me/company, body: json, auth: bearer }
+auth:bearer { token: {{token}} }
+body:json {
+  {
+    "cnpj": "12.ABC.345/01DE-35",
+    "razaoSocial": "Empresa Exemplo LTDA",
+    "nomeCompleto": "Fulano da Silva",
+    "tiposPerfil": ["GERADOR"],
+    "declaracaoRepresentante": true,
+    "versaoTermos": "v1-placeholder"
+  }
+}
+script:post-response {
+  if (res.body?.data?.id) bru.setVar("companyId", res.body.data.id);
+}

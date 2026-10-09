@@ -1,0 +1,6 @@
+meta { name: OTP verify, type: http, seq: 2 }
+post { url: {{baseUrl}}/auth/otp/verify, body: json, auth: none }
+body:json { { "email": "{{email}}", "codigo": "123456" } }
+script:post-response {
+  if (res.body?.data?.accessToken) bru.setVar("token", res.body.data.accessToken);
+}

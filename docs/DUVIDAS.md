@@ -8,9 +8,9 @@ Dúvidas registradas pela sessão de implementação enquanto o usuário estava 
 - [ ] **Texto dos Termos de Uso / declaração "sou dono ou representante legal"** — precisa de redação legal. Decisão: `terms_version = "v1-placeholder"`, texto provisório em `docs/features/register-company.md`; trocar quando sair o texto oficial.
 - [ ] **Copy e arte do e-mail de OTP (pt-BR/en)** — envio real já funciona (Email Delivery ativo); decisão: template HTML simples com código em destaque, validade 10 min e "se não foi você, ignore", assunto `Seu código Ecolchain` / `Your Ecolchain code`. Revisar arte/copy depois.
 - [ ] **Origens CORS locais** — o `ecolchain-management-web` ainda não existe. Decisão: `%dev` permite `http://localhost:5173` e `http://localhost:3000` via config; prod sem origens até o domínio existir.
-- [ ] **Número de sócios/diretoria** — `partner_*` e `board_member_*` valem como 1 upload por item (todos num PDF). Se precisar N arquivos por pessoa, vira modelagem nova (`DOCUMENT` já permite vários uploads por atributo? — ver decisão no relato).
+- [ ] **Número de sócios/diretoria** — `partner_*` e `board_member_*` valem como **1 upload por atributo** (constraint unique `company_id + attribute_id` na tabela `document`): todos os sócios/RGs num único PDF. Se precisar N arquivos por pessoa, vira modelagem nova. Decisão consistente com "um atributo por item".
 - [ ] **ArchUnit** para blindar a fronteira hexagonal em teste — decisão: não adicionado no MVP (estrutura por revisão); pode entrar depois.
-- [ ] **ADB auto-pausada** — se os testes de integração falharam por banco parado, está registrado aqui; iniciar no console OCI e re-rodar `./mvnw clean verify` / o cenário de presign.
+- [x] ~~**ADB auto-pausada**~~ — descartado: E2E completo rodado contra MGMT_DEV em 2026-10-09 com sucesso.
 
 ## Respondidas pelo usuário (referência)
 

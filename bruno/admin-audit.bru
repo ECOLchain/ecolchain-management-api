@@ -1,0 +1,3 @@
+meta { name: Admin - audit log, type: http, seq: 21 }
+get { url: {{baseUrl}}/admin/audit-log, body: none, auth: bearer }
+auth:bearer { token: {{token}} }

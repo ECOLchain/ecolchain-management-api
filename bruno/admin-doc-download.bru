@@ -1,0 +1,3 @@
+meta { name: Admin - download doc, type: http, seq: 18 }
+get { url: {{baseUrl}}/admin/companies/{{companyId}}/documents/{{docCode}}/download-url, body: none, auth: bearer }
+auth:bearer { token: {{token}} }

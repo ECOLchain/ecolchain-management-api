@@ -1,0 +1,7 @@
+meta { name: Upload URL (presign), type: http, seq: 11 }
+post { url: {{baseUrl}}/me/onboarding/documents/{{docCode}}/upload-url, body: json, auth: bearer }
+auth:bearer { token: {{token}} }
+body:json { { "nomeArquivo": "doc.pdf", "contentType": "application/pdf", "tamanhoBytes": 100 } }
+script:post-response {
+  if (res.body?.data?.objectKey) bru.setVar("objectKey", res.body.data.objectKey);
+}

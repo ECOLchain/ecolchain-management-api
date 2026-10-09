@@ -1,9 +1,9 @@
 -- Documentos enviados (intenção de upload + confirmação + revisão).
 
 CREATE TABLE document (
-    id           VARCHAR2(36)  NOT NULL PRIMARY KEY,
-    company_id   VARCHAR2(36)  NOT NULL REFERENCES company (id),
-    attribute_id VARCHAR2(36)  NOT NULL REFERENCES attribute_definition (id),
+    id           RAW(16)  NOT NULL PRIMARY KEY,
+    company_id   RAW(16)  NOT NULL REFERENCES company (id),
+    attribute_id RAW(16)  NOT NULL REFERENCES attribute_definition (id),
     object_key   VARCHAR2(500) NOT NULL,
     file_name    VARCHAR2(300) NOT NULL,
     content_type VARCHAR2(120) NOT NULL,

@@ -1,0 +1,82 @@
+name: Deploy Production (Main -> OCIR prod)
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  OCIR_REGISTRY: gru.ocir.io
+  OCIR_REPO: gru.ocir.io/grmykw8bmw9d/management-api
+  PROD_URL: https://api-prod.ecolchain.com
+  CORS_ORIGIN: https://manage.ecolchain.com
+
+jobs:
+  deploy-production:
+    name: Deploy to Production (api-prod.ecolchain.com)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Run Verify (tests + checks)
+        run: ./mvnw -B -ntp clean verify
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login no OCIR
+        run: |
+          echo "${{ secrets.OCIR_AUTH_TOKEN }}" | docker login "$OCIR_REGISTRY" \
+            -u "${{ secrets.OCIR_USERNAME }}" --password-stdin
+
+      # Deploy converge sozinho: a VM puxa a tag :prod a cada ~2min (systemd timer).
+      - name: Build & Push imagem linux/arm64 (prod + git-sha)
+        run: |
+          docker buildx build --platform linux/arm64 \
+            -t "$OCIR_REPO:prod" \
+            -t "$OCIR_REPO:${{ github.sha }}" \
+            --push .
+
+      - name: Smoke test prod (health + profile-types + preflight CORS)
+        run: |
+          echo "Aguardando deploy convergir (timer de pull ~2min)..."
+          ok=0
+          for i in $(seq 1 40); do
+            h=$(curl -s -o /dev/null -w '%{http_code}' "$PROD_URL/q/health" || true)
+            t=$(curl -s -o /dev/null -w '%{http_code}' "$PROD_URL/public/profile-types" || true)
+            echo "tentativa $i: /q/health=$h /public/profile-types=$t"
+            if [ "$h" = 200 ] && [ "$t" = 200 ]; then ok=1; break; fi
+            sleep 10
+          done
+          if [ "$ok" != 1 ]; then
+            echo "::error::Smoke falhou: API prod nao respondeu 200 em ~7min"
+            exit 1
+          fi
+          curl -sf -X OPTIONS "$PROD_URL/public/profile-types" \
+            -H "Origin: $CORS_ORIGIN" \
+            -H "Access-Control-Request-Method: GET" \
+            -D "$RUNNER_TEMP/preflight.h" -o /dev/null
+          grep -qi "access-control-allow-origin: $CORS_ORIGIN" "$RUNNER_TEMP/preflight.h" \
+            || { echo "::error::Preflight CORS sem allow-origin para $CORS_ORIGIN"; cat "$RUNNER_TEMP/preflight.h"; exit 1; }
+          grep -qi "access-control-allow-credentials: true" "$RUNNER_TEMP/preflight.h" \
+            || { echo "::error::Preflight CORS sem allow-credentials"; cat "$RUNNER_TEMP/preflight.h"; exit 1; }
+          echo "Smoke OK: /q/health + /public/profile-types + preflight CORS credenciado"

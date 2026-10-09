@@ -1,0 +1,1749 @@
+openapi: 3.0.3
+info:
+  title: Ecolchain Management API
+  version: 0.1.0
+  description: >-
+    API de gestao da plataforma Ecolchain: autenticacao por OTP de e-mail
+    (sem senha), cadastro de empresa (PJ), onboarding dinamico por tipo de
+    perfil e revisao manual pelo admin.
+
+    Convenções: campos de request/response em pt-BR camelCase; paths em
+    inglês; toda resposta envelopada em `{data, links, erros}`; `erros[]`
+    carrega Problem Details (RFC 9457) + `code` estável + `campo` opcional.
+servers:
+  - url: /
+tags:
+  - name: auth
+    description: Autenticação OTP + sessão (público, cookie de refresh)
+  - name: public
+    description: Catálogo público
+  - name: me
+    description: Área da empresa autenticada (COMPANY_OWNER)
+  - name: admin
+    description: Administração da plataforma (PLATFORM_ADMIN)
+  - name: well-known
+    description: Metadados públicos de chave
+
+paths:
+  /auth/otp/request:
+    post:
+      tags: [auth]
+      operationId: requestOtp
+      summary: Solicita código OTP por e-mail
+      description: >-
+        Sempre 202, exista ou não a conta. Respeita cooldown de 60 s,
+        teto de 5/h por e-mail e teto por IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpRequestRequest'
+      responses:
+        '202':
+          description: Aceito (resposta genérica, sem enumeração)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/otp/verify:
+    post:
+      tags: [auth]
+      operationId: verifyOtp
+      summary: Verifica código OTP e abre sessão
+      description: >-
+        Código errado, expirado, inexistente ou consumido devolvem sempre
+        o mesmo `code` (`OTP_INVALID`). Em sucesso devolve o access token
+        e o cookie HttpOnly de refresh.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpVerifyRequest'
+      responses:
+        '200':
+          description: Sessão criada
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Cookie `ecolchain_refresh` (HttpOnly; Secure; SameSite=Strict; Path=/auth)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshSession
+      summary: Rotaciona o refresh e devolve novo access token
+      description: Usa o cookie de refresh; o token anterior é revogado (rotativo). Reuso de token revogado revoga a família inteira.
+      security:
+        - refreshCookie: []
+      responses:
+        '200':
+          description: Nova sessão
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Novo cookie `ecolchain_refresh` rotacionado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Revoga a família de refresh e limpa o cookie
+      security:
+        - refreshCookie: []
+      responses:
+        '200':
+          description: Sessão encerrada
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Cookie `ecolchain_refresh` expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /public/profile-types:
+    get:
+      tags: [public]
+      operationId: listPublicProfileTypes
+      summary: Lista tipos de perfil ativos (select do cadastro)
+      responses:
+        '200':
+          description: Tipos ativos ordenados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProfileTypesResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /.well-known/jwks.json:
+    get:
+      tags: [well-known]
+      operationId: getJwks
+      summary: Chaves públicas de verificação JWT (JWKS)
+      responses:
+        '200':
+          description: JWKS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JwksResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me:
+    get:
+      tags: [me]
+      operationId: getMe
+      summary: Conta, empresa e próximo passo calculado no servidor
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Estado atual da conta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/company:
+    put:
+      tags: [me]
+      operationId: upsertCompany
+      summary: Cria/atualiza a empresa (livre até o primeiro submit)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyUpsertRequest'
+      responses:
+        '200':
+          description: Empresa registrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/onboarding:
+    get:
+      tags: [me]
+      operationId: getOnboarding
+      summary: Schema dinâmico (união dos fluxos), valores e progresso
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Schema e estado do onboarding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/onboarding/attributes/{code}:
+    put:
+      tags: [me]
+      operationId: putMyAttribute
+      summary: Grava o valor de um atributo do tipo DATA
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AttributeCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttributeValueRequest'
+      responses:
+        '200':
+          description: Valor gravado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/onboarding/documents/{code}/upload-url:
+    post:
+      tags: [me]
+      operationId: createUploadUrl
+      summary: Cria intenção de upload (DOCUMENT PENDING) e devolve presign PUT
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AttributeCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadUrlRequest'
+      responses:
+        '200':
+          description: URL pré-assinada emitida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadUrlResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/onboarding/documents/{code}/confirm:
+    post:
+      tags: [me]
+      operationId: confirmUpload
+      summary: Confirma o upload (HEAD no objeto) e grava a chave no atributo
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AttributeCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmUploadRequest'
+      responses:
+        '200':
+          description: Upload confirmado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/onboarding/documents/{code}/download-url:
+    get:
+      tags: [me]
+      operationId: getMyDownloadUrl
+      summary: Presign GET do documento confirmado da própria empresa
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AttributeCode'
+      responses:
+        '200':
+          description: URL pré-assinada de download
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/onboarding/submit:
+    post:
+      tags: [me]
+      operationId: submitOnboarding
+      summary: Confere obrigatórios da união e envia para revisão
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Enviado para revisão
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/profile-types:
+    get:
+      tags: [admin]
+      operationId: listProfileTypes
+      summary: Lista todos os tipos de perfil (inclui inativos)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Catálogo de tipos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProfileTypesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [admin]
+      operationId: createProfileType
+      summary: Cria tipo de perfil (aceita `passos` para definir o fluxo na mesma chamada)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileTypeUpsertRequest'
+      responses:
+        '201':
+          description: Tipo criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProfileTypeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/profile-types/{code}:
+    get:
+      tags: [admin]
+      operationId: getProfileType
+      summary: Detalhe de um tipo de perfil, com o fluxo completo
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProfileTypeCode'
+      responses:
+        '200':
+          description: Tipo e fluxo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProfileTypeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags: [admin]
+      operationId: patchProfileType
+      summary: Atualiza nome/descrição/ativo/ordem do tipo
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProfileTypeCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileTypePatchRequest'
+      responses:
+        '200':
+          description: Tipo atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProfileTypeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/profile-types/{code}/flow:
+    put:
+      tags: [admin]
+      operationId: replaceProfileTypeFlow
+      summary: Substitui o fluxo do tipo (declarativo e atômico; upsert de atributos por `codigo`)
+      description: >-
+        Novo requisito obrigatório empurra empresas APPROVED daquele tipo
+        para PENDING_UPDATE.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProfileTypeCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowReplaceRequest'
+      responses:
+        '200':
+          description: Fluxo substituído
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProfileTypeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/attributes:
+    get:
+      tags: [admin]
+      operationId: listAttributes
+      summary: Lista o catálogo de atributos
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Atributos definidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAttributesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [admin]
+      operationId: createAttribute
+      summary: Cria atributo no catálogo
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttributeDefinitionRequest'
+      responses:
+        '201':
+          description: Atributo criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAttributeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/attributes/{code}:
+    put:
+      tags: [admin]
+      operationId: upsertAttribute
+      summary: 'Atualiza a definição de um atributo (global: afeta todos os fluxos que o usam)'
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AttributeCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttributeDefinitionRequest'
+      responses:
+        '200':
+          description: Atributo atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAttributeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/companies:
+    get:
+      tags: [admin]
+      operationId: listCompanies
+      summary: Fila de revisão (filtro por status)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/CompanyStatus'
+        - name: pagina
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: tamanho
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Página de empresas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCompanyListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/companies/{id}:
+    get:
+      tags: [admin]
+      operationId: getCompany
+      summary: Empresa, contato, tipos, valores e documentos
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+      responses:
+        '200':
+          description: Detalhe da empresa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCompanyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/companies/{id}/documents/{code}/download-url:
+    get:
+      tags: [admin]
+      operationId: getCompanyDocumentDownloadUrl
+      summary: Presign GET do documento de uma empresa (revisão)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+        - $ref: '#/components/parameters/AttributeCode'
+      responses:
+        '200':
+          description: URL pré-assinada de download
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/companies/{id}/review:
+    post:
+      tags: [admin]
+      operationId: reviewCompany
+      summary: Revisão geral e por item (APPROVE, REQUEST_CHANGES, REJECT, SUSPEND)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewRequest'
+      responses:
+        '200':
+          description: Revisão registrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCompanyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /admin/audit-log:
+    get:
+      tags: [admin]
+      operationId: listAuditLog
+      summary: Trilha de mudanças de catálogo e revisões
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: pagina
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: tamanho
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Entradas de auditoria (mais recentes primeiro)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: ecolchain_refresh
+
+  parameters:
+    AttributeCode:
+      name: code
+      in: path
+      required: true
+      description: Código estável do atributo (`snake_case`)
+      schema:
+        type: string
+    ProfileTypeCode:
+      name: code
+      in: path
+      required: true
+      description: 'Código do tipo de perfil (ex.: `GERADOR`)'
+      schema:
+        type: string
+    CompanyId:
+      name: id
+      in: path
+      required: true
+      description: Id (uuid) da empresa
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Requisição inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Não autenticado (ou OTP/refresh inválido)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Papel insuficiente
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: 'Conflito de estado (ex.: empresa já submetida)'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Limite de requisições excedido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unprocessable:
+      description: Regra de negócio violada (ver `code`/`campo`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Erro interno
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    # ---------- Envelope ----------
+    Envelope:
+      type: object
+      required: [links, erros]
+      properties:
+        data:
+          type: object
+          nullable: true
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+        erros:
+          type: array
+          items:
+            $ref: '#/components/schemas/Problem'
+
+    Link:
+      type: object
+      required: [rel, href, metodo]
+      properties:
+        rel:
+          type: string
+          example: submit
+        href:
+          type: string
+          example: /me/onboarding/submit
+        metodo:
+          type: string
+          example: POST
+
+    Problem:
+      type: object
+      description: Problem Details RFC 9457 + extensões `code` e `campo`
+      required: [type, title, status, detail, instance, code]
+      properties:
+        type:
+          type: string
+          example: urn:ecolchain:problem:cnpj-in-use
+        title:
+          type: string
+          example: CNPJ já cadastrado
+        status:
+          type: integer
+          example: 422
+        detail:
+          type: string
+          example: Este CNPJ já está em uso por outra empresa. Fale com a Ecolchain.
+        instance:
+          type: string
+          example: /me/company
+        code:
+          type: string
+          description: 'Código estável para o SPA traduzir (ex.: OTP_INVALID, CNPJ_IN_USE)'
+          example: CNPJ_IN_USE
+        campo:
+          type: string
+          nullable: true
+          example: cnpj
+
+    ErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            erros:
+              type: array
+              minItems: 1
+              items:
+                $ref: '#/components/schemas/Problem'
+
+    EmptyResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+
+    # ---------- Auth ----------
+    OtpRequestRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    OtpVerifyRequest:
+      type: object
+      required: [email, codigo]
+      properties:
+        email:
+          type: string
+          format: email
+        codigo:
+          type: string
+          description: Código de 6 dígitos recebido por e-mail
+          pattern: '^[0-9]{6}$'
+
+    SessionResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                accessToken:
+                  type: string
+                expiraEm:
+                  type: integer
+                  format: int64
+                  description: Epoch (segundos) de expiração do access token
+                conta:
+                  $ref: '#/components/schemas/ContaInfo'
+
+    ContaInfo:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        papel:
+          $ref: '#/components/schemas/AccountRole'
+        nomeCompleto:
+          type: string
+          nullable: true
+
+    AccountRole:
+      type: string
+      enum: [COMPANY_OWNER, PLATFORM_ADMIN]
+
+    # ---------- Público ----------
+    PublicProfileTypesResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                tipos:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ProfileTypeSummary'
+
+    ProfileTypeSummary:
+      type: object
+      properties:
+        codigo:
+          type: string
+          example: GERADOR
+        nome:
+          type: string
+          description: Rótulo no idioma negociado (Accept-Language; default pt-BR)
+          example: Gerador de resíduos
+        descricao:
+          type: string
+          nullable: true
+        ordem:
+          type: integer
+
+    JwksResponse:
+      type: object
+      description: JWKS padrão (RFC 7517) — sem envelope por ser endpoint .well-known
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            properties:
+              kty: {type: string}
+              use: {type: string}
+              alg: {type: string}
+              kid: {type: string}
+              n: {type: string}
+              e: {type: string}
+
+    # ---------- /me ----------
+    MeResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                conta:
+                  $ref: '#/components/schemas/ContaInfo'
+                empresa:
+                  $ref: '#/components/schemas/EmpresaResumo'
+                proximoPasso:
+                  $ref: '#/components/schemas/NextStep'
+
+    EmpresaResumo:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        cnpj:
+          type: string
+        razaoSocial:
+          type: string
+        status:
+          $ref: '#/components/schemas/CompanyStatus'
+        tiposPerfil:
+          type: array
+          items:
+            type: string
+
+    NextStep:
+      type: string
+      description: Tela que o SPA deve mostrar, calculada no servidor a partir do estado da empresa
+      enum: [COMPANY_FORM, ONBOARDING, AWAITING_REVIEW, HOME, REJECTED, SUSPENDED]
+
+    CompanyStatus:
+      type: string
+      enum: [PENDING_DOCUMENTS, UNDER_REVIEW, CHANGES_REQUESTED, APPROVED, REJECTED, SUSPENDED, PENDING_UPDATE]
+
+    CompanyUpsertRequest:
+      type: object
+      required: [cnpj, razaoSocial, nomeCompleto, tiposPerfil, declaracaoRepresentante, versaoTermos]
+      properties:
+        cnpj:
+          type: string
+          description: 14 caracteres alfanuméricos (formato novo da Receita aceito)
+          example: 12.ABC.345/01DE-35
+        razaoSocial:
+          type: string
+        nomeCompleto:
+          type: string
+          description: Nome completo do dono ou representante legal
+        tiposPerfil:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: 1..N códigos de tipos ativos
+          example: [GERADOR, TRANSPORTADOR]
+        declaracaoRepresentante:
+          type: boolean
+          description: Declaração "sou dono ou representante legal" (obrigatória)
+        versaoTermos:
+          type: string
+          description: 'Versão dos Termos de Uso aceita (ex.: v1-placeholder)'
+
+    CompanyResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/EmpresaResumo'
+
+    OnboardingResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                status:
+                  $ref: '#/components/schemas/CompanyStatus'
+                tiposPerfil:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ProfileTypeSummary'
+                passos:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/OnboardingStep'
+                progresso:
+                  $ref: '#/components/schemas/Progresso'
+
+    OnboardingStep:
+      type: object
+      properties:
+        codigo:
+          type: string
+        titulo:
+          type: string
+        atributos:
+          type: array
+          items:
+            $ref: '#/components/schemas/OnboardingAttribute'
+
+    OnboardingAttribute:
+      type: object
+      properties:
+        codigo:
+          type: string
+        tipo:
+          $ref: '#/components/schemas/AttributeKind'
+        rotulo:
+          type: string
+        ajuda:
+          type: string
+          nullable: true
+        obrigatorio:
+          type: boolean
+        regras:
+          $ref: '#/components/schemas/AttributeRules'
+        valor:
+          type: string
+          nullable: true
+          description: Texto (DATA) ou objectKey (DOCUMENT confirmado)
+        revisao:
+          $ref: '#/components/schemas/Revisao'
+
+    Revisao:
+      type: object
+      nullable: true
+      properties:
+        status:
+          type: string
+          enum: [PENDING, ACCEPTED, REJECTED]
+        nota:
+          type: string
+          nullable: true
+
+    Progresso:
+      type: object
+      properties:
+        totalObrigatorios:
+          type: integer
+        preenchidosObrigatorios:
+          type: integer
+
+    AttributeKind:
+      type: string
+      enum: [DATA, DOCUMENT]
+
+    AttributeRules:
+      type: object
+      properties:
+        input:
+          type: string
+          description: Hint de input para o SPA (text, textarea, select, date...)
+          nullable: true
+        regex:
+          type: string
+          nullable: true
+        maxLength:
+          type: integer
+          nullable: true
+        extensoesPermitidas:
+          type: array
+          items:
+            type: string
+          nullable: true
+        tamanhoMaxBytes:
+          type: integer
+          format: int64
+          nullable: true
+
+    AttributeValueRequest:
+      type: object
+      required: [valor]
+      properties:
+        valor:
+          type: string
+
+    UploadUrlRequest:
+      type: object
+      required: [nomeArquivo, contentType, tamanhoBytes]
+      properties:
+        nomeArquivo:
+          type: string
+          example: contrato-social.pdf
+        contentType:
+          type: string
+          example: application/pdf
+        tamanhoBytes:
+          type: integer
+          format: int64
+
+    UploadUrlResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                url:
+                  type: string
+                objectKey:
+                  type: string
+                expiraEm:
+                  type: integer
+                  format: int64
+                  description: Epoch (segundos) de expiração da URL
+                contentType:
+                  type: string
+                tamanhoBytes:
+                  type: integer
+                  format: int64
+
+    ConfirmUploadRequest:
+      type: object
+      required: [objectKey]
+      properties:
+        objectKey:
+          type: string
+
+    DownloadUrlResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                url:
+                  type: string
+                objectKey:
+                  type: string
+                expiraEm:
+                  type: integer
+                  format: int64
+
+    SubmitResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                status:
+                  $ref: '#/components/schemas/CompanyStatus'
+
+    # ---------- Admin ----------
+    ProfileTypeUpsertRequest:
+      type: object
+      required: [codigo, nomePt, nomeEn]
+      properties:
+        codigo:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]*$'
+        nomePt:
+          type: string
+        nomeEn:
+          type: string
+        descricaoPt:
+          type: string
+          nullable: true
+        descricaoEn:
+          type: string
+          nullable: true
+        ativo:
+          type: boolean
+          default: true
+        ordem:
+          type: integer
+        passos:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlowStepInput'
+
+    ProfileTypePatchRequest:
+      type: object
+      properties:
+        nomePt:
+          type: string
+        nomeEn:
+          type: string
+        descricaoPt:
+          type: string
+          nullable: true
+        descricaoEn:
+          type: string
+          nullable: true
+        ativo:
+          type: boolean
+        ordem:
+          type: integer
+
+    FlowReplaceRequest:
+      type: object
+      required: [passos]
+      properties:
+        passos:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlowStepInput'
+
+    FlowStepInput:
+      type: object
+      required: [codigo, tituloPt, tituloEn, atributos]
+      properties:
+        codigo:
+          type: string
+        tituloPt:
+          type: string
+        tituloEn:
+          type: string
+        atributos:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlowAttributeInput'
+
+    FlowAttributeInput:
+      type: object
+      required: [codigo, obrigatorio]
+      properties:
+        codigo:
+          type: string
+          description: snake_case estável; reaproveita definição existente se `definicao` ausente
+        obrigatorio:
+          type: boolean
+        definicao:
+          $ref: '#/components/schemas/AttributeDefinitionInput'
+
+    AttributeDefinitionInput:
+      type: object
+      required: [tipo, rotuloPt, rotuloEn]
+      properties:
+        tipo:
+          $ref: '#/components/schemas/AttributeKind'
+        rotuloPt:
+          type: string
+        rotuloEn:
+          type: string
+        ajudaPt:
+          type: string
+          nullable: true
+        ajudaEn:
+          type: string
+          nullable: true
+        regras:
+          $ref: '#/components/schemas/AttributeRules'
+
+    AttributeDefinitionRequest:
+      allOf:
+        - $ref: '#/components/schemas/AttributeDefinitionInput'
+        - type: object
+          required: [codigo]
+          properties:
+            codigo:
+              type: string
+              pattern: '^[a-z][a-z0-9_]*$'
+            ativo:
+              type: boolean
+
+    AdminProfileTypesResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                tipos:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AdminProfileType'
+
+    AdminProfileTypeResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AdminProfileType'
+
+    AdminProfileType:
+      type: object
+      properties:
+        codigo:
+          type: string
+        nomePt:
+          type: string
+        nomeEn:
+          type: string
+        descricaoPt:
+          type: string
+          nullable: true
+        descricaoEn:
+          type: string
+          nullable: true
+        ativo:
+          type: boolean
+        ordem:
+          type: integer
+        passos:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminFlowStep'
+
+    AdminFlowStep:
+      type: object
+      properties:
+        codigo:
+          type: string
+        tituloPt:
+          type: string
+        tituloEn:
+          type: string
+        atributos:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminFlowAttribute'
+
+    AdminFlowAttribute:
+      type: object
+      properties:
+        codigo:
+          type: string
+        obrigatorio:
+          type: boolean
+        definicao:
+          $ref: '#/components/schemas/AdminAttribute'
+
+    AdminAttributesResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                atributos:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AdminAttribute'
+
+    AdminAttributeResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AdminAttribute'
+
+    AdminAttribute:
+      type: object
+      properties:
+        codigo:
+          type: string
+        tipo:
+          $ref: '#/components/schemas/AttributeKind'
+        rotuloPt:
+          type: string
+        rotuloEn:
+          type: string
+        ajudaPt:
+          type: string
+          nullable: true
+        ajudaEn:
+          type: string
+          nullable: true
+        regras:
+          $ref: '#/components/schemas/AttributeRules'
+        ativo:
+          type: boolean
+
+    AdminCompanyListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                empresas:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AdminCompanyListItem'
+                pagina:
+                  type: integer
+                tamanho:
+                  type: integer
+                total:
+                  type: integer
+                  format: int64
+
+    AdminCompanyListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        cnpj:
+          type: string
+        razaoSocial:
+          type: string
+        status:
+          $ref: '#/components/schemas/CompanyStatus'
+        tiposPerfil:
+          type: array
+          items:
+            type: string
+        criadoEm:
+          type: string
+          format: date-time
+        submetidoEm:
+          type: string
+          format: date-time
+          nullable: true
+
+    AdminCompanyResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AdminCompany'
+
+    AdminCompany:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        cnpj:
+          type: string
+        razaoSocial:
+          type: string
+        status:
+          $ref: '#/components/schemas/CompanyStatus'
+        tiposPerfil:
+          type: array
+          items:
+            type: string
+        contato:
+          type: object
+          properties:
+            email:
+              type: string
+            nomeCompleto:
+              type: string
+            versaoTermos:
+              type: string
+            termosAceitosEm:
+              type: string
+              format: date-time
+        valores:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminCompanyValue'
+        criadoEm:
+          type: string
+          format: date-time
+        submetidoEm:
+          type: string
+          format: date-time
+          nullable: true
+
+    AdminCompanyValue:
+      type: object
+      properties:
+        codigo:
+          type: string
+        tipo:
+          $ref: '#/components/schemas/AttributeKind'
+        rotuloPt:
+          type: string
+        rotuloEn:
+          type: string
+        obrigatorio:
+          type: boolean
+        valor:
+          type: string
+          nullable: true
+        revisao:
+          $ref: '#/components/schemas/Revisao'
+        documento:
+          type: object
+          nullable: true
+          properties:
+            nomeArquivo:
+              type: string
+            contentType:
+              type: string
+            tamanhoBytes:
+              type: integer
+              format: int64
+            status:
+              type: string
+              enum: [PENDING, CONFIRMED]
+            confirmadoEm:
+              type: string
+              format: date-time
+              nullable: true
+
+    ReviewRequest:
+      type: object
+      required: [decisao]
+      properties:
+        decisao:
+          type: string
+          enum: [APPROVE, REQUEST_CHANGES, REJECT, SUSPEND]
+        nota:
+          type: string
+          nullable: true
+          description: Obrigatória para REQUEST_CHANGES e REJECT
+        itens:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewItem'
+
+    ReviewItem:
+      type: object
+      required: [atributo, decisao]
+      properties:
+        atributo:
+          type: string
+          description: Código do atributo revisado
+        decisao:
+          type: string
+          enum: [ACCEPT, REJECT]
+        nota:
+          type: string
+          nullable: true
+
+    AuditLogResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                itens:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AuditLogItem'
+                pagina:
+                  type: integer
+                tamanho:
+                  type: integer
+                total:
+                  type: integer
+                  format: int64
+
+    AuditLogItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ator:
+          type: string
+          description: E-mail do admin ou "system"
+        acao:
+          type: string
+        entidade:
+          type: string
+        entidadeId:
+          type: string
+        antes:
+          type: string
+          nullable: true
+        depois:
+          type: string
+          nullable: true
+        criadoEm:
+          type: string
+          format: date-time

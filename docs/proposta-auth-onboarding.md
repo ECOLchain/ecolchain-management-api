@@ -41,7 +41,7 @@ Os diagramas são Mermaid: o GitHub renderiza direto e o preview de Markdown do 
 |---|---|---|
 | API | Quarkus 3.40 (Java 25), Panache, Flyway, Oracle ADB 23ai (`MGMT_DEV` e `MGMT_PROD`), OpenAPI, logs JSON. Pacote único `com.ecolchain.api` | Entram `quarkus-smallrye-jwt`, `quarkus-smallrye-jwt-build` e `quarkus-mailer`. Direção já definida no `AGENTS.md`: **API-first** (contrato OpenAPI primeiro, interfaces geradas pelo OpenAPI Generator, implementação depois) |
 | Documentos | `DocumentStorageService` gera URLs pré-assinadas (PUT 10 min, GET 5 min, máx. 25 MiB, extensões em allow-list). `DevDocumentResource` só existe no profile `dev`, **não tem auth** e é temporário (será substituído). A chave (`docs/<uuid>-<arquivo>`) **não tem dono** | Reaproveitar o serviço. O upload-url vira `POST` e cria uma intenção de upload (`DOCUMENT`), com prefixo por empresa e checagem de dono (D8) |
-| E-mail | Módulo Terraform `oci/email-delivery` em andamento (branch `feat/oci-email-delivery` do infra): Email Domain `ecolchain.com`, DKIM no Cloudflare, Approved Sender `ecolchain@ecolchain.com`, credencial SMTP. O README da API já documenta o uso (SMTP 465 com TLS implícito, mock em dev e test). **Limite da tenancy: 200 e-mails/24 h e 10/min** | Base do envio do OTP (D11). O limite exige rate limit desde o primeiro dia |
+| E-mail | OCI Email Delivery **provisionado e ativo** (validado via `oci` CLI na tenancy ecolchain): Email Domain `ecolchain.com` ACTIVE, DKIM `ecolchain-gru-20261008` ACTIVE, Approved Sender `ecolchain@ecolchain.com` ACTIVE, SMTP `smtp.email.sa-saopaulo-1.oci.oraclecloud.com:465` (TLS implícito), credenciais já no `.env` da API | Base do envio do OTP (D11): envio **real** já funciona em dev; testes usam mock. Falta só o **template HTML** do e-mail (C.2). Limite da tenancy: 200 e-mails/24 h e 10/min — rate limit desde o primeiro dia |
 | Front | O SPA desta plataforma **ainda não existe**: será o repo `ecolchain-management-web`. O `ecolchain-core-web` (React; `app.ecolchain.com`) continua só com carteira Solana | O Management Web nasce consumindo `/auth` e `/me`. O login da empresa é separado da carteira |
 | Hospedagem da API | Ainda não existe no infra; por ora **tudo roda local** (`quarkus:dev`), máquina OCI depois | Cookie, CORS e entrega das chaves ficam parametrizados para quando o deploy chegar |
 | On-chain | `Participante.kyc_hash` é informado pelo operador no cadastro on-chain. Os papéis on-chain (Coletor, Cooperativa, Transportador, Indústria) diferem dos 6 tipos desta proposta | Futuro: esta API vira a fonte do cadastro/KYC off-chain e do `kyc_hash`. Fora do escopo agora |
@@ -54,7 +54,7 @@ Os diagramas são Mermaid: o GitHub renderiza direto e o preview de Markdown do 
 | D2 | Sessão | **Access JWT** de 15 min (RS256) + **refresh token opaco** de 7 dias, rotativo, com detecção de reuso. Refresh em cookie `HttpOnly; Secure; SameSite=Strict; Path=/auth`; access em memória no SPA | Token curto limita o estrago e o refresh permite logout e revogação de verdade. Exige a API sob `*.ecolchain.com` (mesmo site do SPA); se não der, o refresh vai no corpo da resposta. Alternativa mais simples: um único JWT de 1 a 8 h, sem revogação |
 | D3 | Chaves JWT (MVP) | Par RSA 2048 gerado por script; **dev e prod commitadas em `keys/`** (decisão explícita do dono, é MVP). `kid` no header desde já | Detalhes em C.1. Débito técnico registrado: mover para secret/OCI Vault e JWKS na evolução |
 | D4 | Autorização | Claim `groups` = `COMPANY_OWNER` ou `PLATFORM_ADMIN`; `@RolesAllowed` por prefixo (`/me/**`, `/admin/**`); deny by default nas demais rotas. Estado da conta e da empresa é lido do banco, não do token. Em `/admin/**` o papel também é conferido no banco | O token só prova identidade. Regra de negócio fica sempre no servidor, e a conferência no banco reduz o estrago se a chave vazar |
-| D5 | Admin | `leandroluz201616@mail.com` semeado por migration como `PLATFORM_ADMIN` (o login é o mesmo OTP de todo mundo); novos admins via INSERT no banco por ora | Bootstrap mínimo. Depois: convite de admins por endpoint e 2º fator |
+| D5 | Admin | `leandroluz201616@gmail.com` semeado por migration como `PLATFORM_ADMIN` (o login é o mesmo OTP de todo mundo); novos admins via INSERT no banco por ora | Bootstrap mínimo. Depois: convite de admins por endpoint e 2º fator |
 | D6 | Catálogo dinâmico | `PROFILE_TYPE` → `ONBOARDING_STEP` → `STEP_ATTRIBUTE` → `ATTRIBUTE_DEFINITION` no banco, editados por endpoint. A API devolve o **schema do formulário** e o SPA só renderiza. Empresa pode ter **N tipos** (`COMPANY_PROFILE`); o schema servido é a **união** dos fluxos, sem repetir atributo. Rótulos bilíngues (`label_pt`/`label_en`, `help_pt`/`help_en`) | Exigir outro documento ou dado vira 1 chamada, sem deploy da API nem do SPA |
 | D7 | Valores | Tudo `VARCHAR2`: dado = texto; documento = **chave do objeto** no bucket | Como pedido. A validação (regex, tamanho, extensão) vem das `rules` do atributo e só pode **restringir** a política global (`app.docs.*`) |
 | D8 | Documentos | `POST upload-url` cria uma intenção de upload (`DOCUMENT` PENDING) e devolve o presign PUT → upload direto → `confirm` (a API faz HEAD no objeto, marca `CONFIRMED` e grava a chave no atributo). Chave `docs/<companyId>/<atributo>/<uuid>-<arquivo>`; a API só confirma chaves que ela mesma emitiu para aquela empresa | Impede que uma empresa "reivindique" arquivo de outra (IDOR) e deixa rastro de uploads órfãos para limpeza. Reaproveita TTL e limite atuais |
@@ -347,12 +347,11 @@ O `nextStep` é calculado no servidor a partir desses estados — `PENDING_UPDAT
 | 9 | Hospedagem | Máquina OCI depois; por ora tudo local — cookie/CORS parametrizados |
 | 10 | Chaves JWT | **Dev e prod commitadas** em `keys/` (débito técnico assumido; C.1) |
 
-### Pendências menores (não bloqueiam)
+### Pendências menores
 
-- Você mandou uma **senha** para o admin (`ecolchain1234@`), mas o login é sem senha (código por e-mail). Mantemos OTP para o admin também — certo? Se quiser senha, vira decisão nova (e bem mais superfície).
-- O e-mail é `leandroluz201616@mail.com` mesmo? Confirmo se não era `@gmail.com` antes de semear.
-- Gov.br / SINIR / SIGOR: **não há integração** no MVP — os números/comprovantes são dados e documentos conferidos manualmente pelo admin na revisão.
-- Documentos "da diretoria" e "dos sócios" entram como **1 documento consolidado** cada (`board_personal_docs`, `partners_personal_docs`). Se preferir um atributo por item (RG, CPF, comprovante), é só ajustar o seed — o modelo já permite.
+Resolvidas na conversa: admin entra por **OTP** como todo mundo; e-mail do admin é `leandroluz201616@gmail.com`; chaves JWT **commitadas** (dev e prod); documentos são **um atributo por item** (RG, CPF, comprovante etc. — nada consolidado), e cada tipo de perfil escolhe quais atributos solicita — tudo alterável via `PUT /admin/profile-types/{code}/flow`; itens condicionais entram como opcionais.
+
+Dúvidas que surgirem durante a implementação são registradas em `docs/DUVIDAS.md` — protocolo em `docs/handoff-auth-onboarding.md`, seção 5.
 
 ## 7. Entrega em fatias
 
@@ -636,12 +635,12 @@ smallrye.jwt.new-token.lifespan=900
 
 ### C.2 E-mail (OCI Email Delivery)
 
-A infra (domínio, DKIM, sender, credencial SMTP) e a configuração do Mailer já estão sendo tratadas no módulo `oci/email-delivery` e no README da API. Para o fluxo de auth, o que importa:
+A infra está **pronta e validada via `oci` CLI** (tenancy ecolchain — o `~/.oci/config` local aponta para outra tenancy; use um config alternativo com as credenciais de `infra/terraform/oci/email-delivery/env/terraform.tfvars` + `~/.oci/ecolchain_terraform.pem`): domínio `ecolchain.com` ACTIVE, DKIM ACTIVE (CNAME validado no Cloudflare), sender `ecolchain@ecolchain.com` ACTIVE e endpoint SMTP `smtp.email.sa-saopaulo-1.oci.oraclecloud.com:465`. Credenciais SMTP já estão no `.env` (`QUARKUS_MAILER_USERNAME/PASSWORD`). **O que falta é só o template HTML** do e-mail de OTP (branded, pt-BR/en, com fallback texto). Para o fluxo de auth, o que importa:
 
 - O `From` precisa ser exatamente o Approved Sender (`ecolchain@ecolchain.com`).
 - **Limite de 200 e-mails/24 h e 10/min** na tenancy: cada login sem refresh válido gasta um e-mail, e quem esgota a cota derruba o login de todo mundo. Mitigações: refresh de 7 dias, cooldown por e-mail e por IP, teto global diário com erro amigável quando perto do limite e, antes de abrir ao público, Cloudflare Turnstile no `request`. Aumento de limite exige SPF e DKIM (ver README do infra).
 - O envio acontece **depois do commit** da transação, e o `request` nunca revela se o e-mail existe.
-- Em `quarkus:dev` e nos testes o Mailer vem em mock (o código aparece no console e o `MockMailbox` lê o e-mail nos testes). Num deploy `dev` o envio é real e gasta a cota.
+- Em `quarkus:dev` o envio é **real** (credenciais no `.env`) — cada OTP gasta a cota de 200/24 h, então testes sempre com `MockMailbox` e, para desenvolvimento repetitivo, há profile de mock via config.
 - O e-mail só leva o código, a validade e "se não foi você, ignore": sem link, para não treinar o usuário a clicar.
 - Evolução: a credencial SMTP hoje fica no usuário do Terraform; o ideal é um usuário IAM dedicado só com `use email-family`.
 
@@ -720,7 +719,9 @@ Nota: CNH, documento do veículo/placa, MTR e MOPP/ANTT são **documentos por ca
 | `incorporation_minutes` | DOCUMENT | sim — Ata da Assembleia Geral de Constituição |
 | `bylaws` | DOCUMENT | sim — Estatuto Social |
 | `founding_members_list` | DOCUMENT | sim — Lista de Associados Fundadores |
-| `board_personal_docs` | DOCUMENT | sim — RG, CPF e comprovante de residência da diretoria (consolidado) |
+| `board_member_rg` | DOCUMENT | sim — RG da diretoria |
+| `board_member_cpf` | DOCUMENT | sim — CPF da diretoria |
+| `board_member_address_proof` | DOCUMENT | sim — comprovante de residência da diretoria |
 | `catadores_sinir_registry` | DATA | sim — habilitação no Módulo Catadores do SINIR |
 | `infrastructure_declaration` | DOCUMENT | sim — comprovação de galpão/equipamentos de triagem |
 | `responsible_cpf` | DATA | sim |
@@ -730,7 +731,8 @@ Nota: CNH, documento do veículo/placa, MTR e MOPP/ANTT são **documentos por ca
 | code | tipo | obrig. |
 |---|---|---|
 | `articles_of_association` | DOCUMENT | sim — Contrato Social (LTDA / Marco Legal das Startups) |
-| `partners_personal_docs` | DOCUMENT | sim — documentos pessoais dos sócios (consolidado) |
+| `partner_rg` | DOCUMENT | sim — RG dos sócios |
+| `partner_cpf` | DOCUMENT | sim — CPF dos sócios |
 | `business_permit` | DOCUMENT | sim — Alvará de Funcionamento |
 | `primary_cnae` | DATA | sim |
 | `secondary_cnaes` | DATA | não |

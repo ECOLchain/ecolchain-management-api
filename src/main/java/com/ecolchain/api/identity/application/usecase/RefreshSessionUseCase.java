@@ -61,7 +61,7 @@ public class RefreshSessionUseCase {
         next.expiresAt = now.plus(policy.refresh().ttl());
         next.familyExpiresAt = current.familyExpiresAt;
         refreshes.save(next);
-        refreshes.revokeFamily(current.familyId, next.id); // revoga o atual; novo fica ativo
+        refreshes.revoke(current.id, next.id); // revoga só o apresentado; novo fica ativo
 
         var issued = issuer.issue(account);
         return new Result(issued.token(), issued.expiresInSeconds(),

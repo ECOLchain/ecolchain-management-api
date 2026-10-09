@@ -114,6 +114,39 @@ class OtpFlowTest {
     }
 
     @Test
+    void refreshRotationRevokesOnlyPresentedToken() {
+        var current = new RefreshToken();
+        current.id = UUID.randomUUID();
+        var accountId = UUID.randomUUID();
+        current.accountId = accountId;
+        current.familyId = UUID.randomUUID();
+        current.revokedAt = null;
+        current.expiresAt = Instant.now().plus(7, ChronoUnit.DAYS);
+        current.familyExpiresAt = Instant.now().plus(30, ChronoUnit.DAYS);
+        String secret = "segredo-atual";
+        Mockito.when(refreshes.byHash(RefreshToken.sha256(secret))).thenReturn(Optional.of(current));
+        var account = new Account();
+        account.id = accountId;
+        account.email = "dono@empresa.com";
+        account.role = Account.Role.COMPANY_OWNER;
+        Mockito.when(accounts.byId(accountId)).thenReturn(Optional.of(account));
+        Mockito.when(refreshes.save(any())).thenAnswer(inv -> {
+            RefreshToken t = inv.getArgument(0);
+            t.id = UUID.randomUUID();
+            return t;
+        });
+        given().cookie("ecolchain_refresh", current.familyId + "." + secret)
+                .when().post("/auth/refresh")
+                .then().statusCode(200)
+                .body("data.accessToken", notNullValue())
+                .cookie("ecolchain_refresh", notNullValue());
+        // o novo token é da família e NÃO pode ser revogado pela rotação (bug: revokeFamily revogava o recém-criado)
+        Mockito.verify(refreshes).revoke(org.mockito.ArgumentMatchers.eq(current.id),
+                org.mockito.ArgumentMatchers.any(UUID.class));
+        Mockito.verify(refreshes, Mockito.never()).revokeFamily(any(), any());
+    }
+
+    @Test
     void refreshWithoutCookieIs401() {
         given().when().post("/auth/refresh")
                 .then().statusCode(401)

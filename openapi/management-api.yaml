@@ -997,7 +997,7 @@ components:
                 expiraEm:
                   type: integer
                   format: int64
-                  description: Epoch (segundos) de expiração do access token
+                  description: TTL (segundos) até a expiração do access token
                 conta:
                   $ref: '#/components/schemas/ContaInfo'
 
@@ -1202,7 +1202,7 @@ components:
       properties:
         status:
           type: string
-          enum: [PENDING, ACCEPTED, REJECTED]
+          enum: [PENDING, UPLOADED, ACCEPTED, REJECTED]
         nota:
           type: string
           nullable: true
@@ -1278,7 +1278,7 @@ components:
                 expiraEm:
                   type: integer
                   format: int64
-                  description: Epoch (segundos) de expiração da URL
+                  description: TTL (segundos) até a expiração da URL
                 contentType:
                   type: string
                 tamanhoBytes:
@@ -1667,7 +1667,7 @@ components:
               format: int64
             status:
               type: string
-              enum: [PENDING, CONFIRMED]
+              enum: [UPLOADED, ACCEPTED, REJECTED]
             confirmadoEm:
               type: string
               format: date-time

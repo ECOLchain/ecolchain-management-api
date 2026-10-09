@@ -41,6 +41,13 @@ public class PanacheRefreshTokenStore implements RefreshTokenStore {
 
     @Override
     @Transactional
+    public void revoke(UUID tokenId, UUID replacedBy) {
+        RefreshTokenEntity.update("revokedAt = ?1, replacedBy = ?2 where id = ?3 and revokedAt is null",
+                Instant.now(), replacedBy, tokenId);
+    }
+
+    @Override
+    @Transactional
     public void revokeFamily(UUID familyId, UUID replacedBy) {
         RefreshTokenEntity.update("revokedAt = ?1, replacedBy = ?2 where familyId = ?3 and revokedAt is null",
                 Instant.now(), replacedBy, familyId);

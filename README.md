@@ -65,6 +65,22 @@ Terraform no repo `ecolchain-infra-general`, módulo
 `infra/terraform/oci/email-delivery`. Pré-requisito: módulo aplicado (merge
 na `main` do infra + aprovação do environment `prod`).
 
+### Dados de conexão
+
+| Campo | Valor |
+|---|---|
+| Servidor SMTP | `smtp.email.sa-saopaulo-1.oci.oraclecloud.com` |
+| Porta | `465` (TLS implícito, `quarkus.mailer.tls=true`) |
+| Autenticação | `SMTP AUTH PLAIN` com usuário/senha SMTP da OCI (outputs `smtp_username` / `smtp_password`) |
+| Remetente (From) | `ecolchain@ecolchain.com` |
+| Região | `sa-saopaulo-1` |
+| Limite atual | 200 e-mails/24h e 10/min |
+
+Fluxo: app Quarkus (`quarkus-mailer`) -> SMTP 465/TLS -> OCI Email Delivery
+-> caixa do usuário. O usuário SMTP (contém OCIDs) e a senha **não** vão no
+repositório: saem de `terraform output -raw smtp_username|smtp_password`
+(passo 1) e ficam no `.env`/variáveis de ambiente.
+
 ### 1. Obter as credenciais
 
 ```shell script
@@ -191,6 +207,41 @@ class VerificationMailServiceTest {
 - Responder igual quando o e-mail já existe (evita enumeração de usuários).
 - Enviar o e-mail depois do commit da transação.
 - Aumento de limite exige SPF+DKIM e pedido à Oracle (ver README do infra).
+
+### Teste manual de envio (sem subir a app)
+
+```shell script
+cd ../ecolchain-infra-general
+set -a; source infra/terraform/oci/tfstate-backend/env/backend.env; set +a   # backend.env nao tem "export"
+TF="terraform -chdir=infra/terraform/oci/email-delivery"
+export SMTP_HOST="$($TF output -raw smtp_endpoint)" SMTP_USER="$($TF output -raw smtp_username)" SMTP_PASS="$($TF output -raw smtp_password)" SMTP_FROM="$($TF output -raw sender_email)" SMTP_TO="<seu-email>"
+
+python3 - <<'PY'
+import os, ssl, smtplib
+from email.message import EmailMessage
+
+host, user, pw = os.environ["SMTP_HOST"], os.environ["SMTP_USER"], os.environ["SMTP_PASS"]
+sender, to = os.environ["SMTP_FROM"], os.environ["SMTP_TO"]
+
+msg = EmailMessage()
+msg["From"] = f"ECOLchain <{sender}>"
+msg["To"] = to
+msg["Subject"] = "Teste OCI Email Delivery - ECOLchain"
+msg.set_content("Teste de envio via OCI Email Delivery.")
+
+with smtplib.SMTP_SSL(host, 465, context=ssl.create_default_context(), timeout=30) as s:
+    s.login(user, pw)
+    s.mail(sender)
+    s.rcpt(to)
+    print(s.data(msg.as_bytes()))   # (250, b'Ok') = aceito pelo servidor
+PY
+```
+
+`250 Ok` significa que a OCI aceitou a mensagem (aceitar != entregar; confira
+a caixa de entrada/spam e, no Gmail, "Mostrar original" para ver
+DKIM/SPF/DMARC). Se der `535 Authorization failed`, o sender recém-criado
+pode demorar a ficar disponível: tente de novo com espera. Este teste foi
+validado em 08/10/2026 (resposta `250 Ok`).
 
 ### Troubleshooting
 

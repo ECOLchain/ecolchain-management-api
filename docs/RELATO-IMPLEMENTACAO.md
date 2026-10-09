@@ -60,3 +60,13 @@ Coleção Bruno em `bruno/` cobre os 25 endpoints (env `local` com `{{baseUrl}}`
 - `app.cnpj.lookup.enabled` desligado até escolher provedor de consulta CNPJ.
 - Subir com profile `prod` exige deploy real (AGENTS.md: prod é read-only).
 - HV000271: warnings de `@Valid` em container vindos das interfaces geradas — cosmético, sem impacto.
+
+## Correções pós-E2E do frontend (2026-10-09)
+
+Bugs encontrados pela sessão do SPA (`ecolchain-management-web`) no E2E de browser:
+
+1. **`GET /me/onboarding` 500 com documento enviado** — `Revisao.status` no contrato tinha `[PENDING, ACCEPTED, REJECTED]` e o domínio emite `UPLOADED`. Contrato corrigido para `[PENDING, UPLOADED, ACCEPTED, REJECTED]`; `documento.status` (detalhe admin) alinhado a `[UPLOADED, ACCEPTED, REJECTED]`. `fromValue` agora mapeia 1:1.
+2. **Refresh morria na 2ª rotação** — `revokeFamily` revogava todos os ativos da família, incluindo o token recém-criado. Criado `RefreshTokenStore.revoke(tokenId, replacedBy)` (revoga só o apresentado); `revokeFamily` fica exclusivo para reuso suspeito e logout. Verificado: 3 rotações seguidas 200; cookie velho re-usado ainda dispara `REFRESH_REUSED`.
+3. **`expiraEm` é TTL, não epoch** — descrição do contrato corrigida ("TTL (segundos)"); frontend já normalizava.
+
+`./mvnw clean verify`: 41 testes, 0 falhas.

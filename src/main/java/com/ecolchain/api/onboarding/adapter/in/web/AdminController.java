@@ -87,6 +87,7 @@ public class AdminController implements AdminApi {
         c.setId(company.id);
         c.setCnpj(company.cnpj);
         c.setRazaoSocial(company.razaoSocial);
+        c.setCarteira(company.wallet);
         c.setStatus(CompanyStatus.valueOf(company.status.name()));
         c.setTiposPerfil(company.profileTypeCodes);
         if (company.createdAt != null) c.setCriadoEm(company.createdAt.atOffset(ZoneOffset.UTC));
@@ -127,7 +128,14 @@ public class AdminController implements AdminApi {
             v.setRotuloEn(attr.def().labelEn);
             v.setObrigatorio(attr.required());
             var val = r.values().get(attr.def().id);
-            if (val != null) v.setValor(val.valueText());
+            if (val != null) {
+                v.setValor(val.valueText());
+                var rev = new Revisao();
+                rev.setStatus(Revisao.StatusEnum.fromValue(
+                        val.reviewStatus() == null ? "PENDING" : val.reviewStatus()));
+                rev.setNota(val.reviewNote());
+                v.setRevisao(rev);
+            }
             var doc = r.documents().get(attr.def().id);
             if (doc != null && doc.status != com.ecolchain.api.documents.domain.CompanyDocument.Status.PENDING_UPLOAD) {
                 var rev = new Revisao();
@@ -166,16 +174,17 @@ public class AdminController implements AdminApi {
     @Override
     public Response reviewCompany(UUID id, ReviewRequest req) {
         var admin = admin();
-        var company = review.execute(admin, id,
-                ReviewCompanyUseCase.Decision.valueOf(req.getDecisao().name()), req.getNota());
-        var c = new AdminCompany();
-        c.setId(company.id);
-        c.setStatus(CompanyStatus.valueOf(company.status.name()));
-        var body = new AdminCompanyResponse();
-        body.setData(c);
-        body.setLinks(List.of());
-        body.setErros(List.of());
-        return Response.ok(body).build();
+        var itens = req.getItens() == null ? List.<ReviewCompanyUseCase.Item>of()
+                : req.getItens().stream()
+                        .map(i -> new ReviewCompanyUseCase.Item(i.getAtributo(),
+                                ReviewCompanyUseCase.ItemDecision.valueOf(i.getDecisao().name()),
+                                i.getNota()))
+                        .toList();
+        review.execute(admin, id,
+                ReviewCompanyUseCase.Decision.valueOf(req.getDecisao().name()), req.getNota(),
+                itens);
+        // Resposta = detalhe completo (o SPA redesenha a empresa inteira).
+        return getCompany(id);
     }
 
     // ---------- catálogo ----------
@@ -387,7 +396,7 @@ public class AdminController implements AdminApi {
         m.setNomeCompleto(a.fullName);
         m.setTelefone(a.phone);
         m.setPapel(AccountRole.valueOf(a.role.name()));
-        m.setCriadoEm(a.createdAt.atOffset(ZoneOffset.UTC));
+        if (a.createdAt != null) m.setCriadoEm(a.createdAt.atOffset(ZoneOffset.UTC));
         return m;
     }
 

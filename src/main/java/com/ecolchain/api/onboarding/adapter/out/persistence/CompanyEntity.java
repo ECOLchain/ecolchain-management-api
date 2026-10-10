@@ -11,6 +11,7 @@ public class CompanyEntity extends PanacheEntityBase {
     @Id public UUID id;
     @Column(nullable = false, length = 14) public String cnpj;
     @Column(name = "razao_social", nullable = false) public String razaoSocial;
+    @Column(name = "wallet") public String wallet;
     @Column(nullable = false) public String status;
     @Column(name = "review_notes") public String reviewNotes;
     @Column(name = "terms_version") public String termsVersion;

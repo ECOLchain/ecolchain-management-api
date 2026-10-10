@@ -10,6 +10,7 @@ import com.ecolchain.api.onboarding.application.port.out.AuditStore;
 import com.ecolchain.api.onboarding.application.port.out.CompanyStore;
 import com.ecolchain.api.onboarding.domain.CnpjValidator;
 import com.ecolchain.api.onboarding.domain.Company;
+import com.ecolchain.api.onboarding.domain.WalletValidator;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -34,7 +35,7 @@ public class UpsertCompanyUseCase {
 
     @Transactional
     public Company execute(Account account, String cnpjRaw, String razaoSocial, String nomeCompleto,
-                           List<String> tiposPerfil, Boolean declaracao, String versaoTermos) {
+                           String carteiraRaw, List<String> tiposPerfil, Boolean declaracao, String versaoTermos) {
         String cnpj = CnpjValidator.normalize(cnpjRaw);
         if (!CnpjValidator.isValid(cnpj)) {
             throw new BusinessException(ErrorCodes.CNPJ_INVALID, 400, "CNPJ inválido", "cnpj");
@@ -44,6 +45,11 @@ public class UpsertCompanyUseCase {
         }
         if (nomeCompleto == null || nomeCompleto.isBlank()) {
             throw new BusinessException(ErrorCodes.VALIDATION, 400, "nome completo obrigatório", "nomeCompleto");
+        }
+        String carteira = WalletValidator.normalize(carteiraRaw);
+        if (!WalletValidator.isValid(carteira)) {
+            throw new BusinessException(ErrorCodes.WALLET_INVALID, 400,
+                    "endereço de carteira inválido (Solana base58 ou 0x)", "carteira");
         }
         if (tiposPerfil == null || tiposPerfil.isEmpty()) {
             throw new BusinessException(ErrorCodes.VALIDATION, 400, "selecione ao menos um tipo de perfil", "tiposPerfil");
@@ -78,6 +84,7 @@ public class UpsertCompanyUseCase {
                 company.cnpj = cnpj;
             }
             company.razaoSocial = razaoSocial.trim();
+            company.wallet = carteira;
         } else {
             companies.byCnpj(cnpj).ifPresent(o -> {
                 throw new BusinessException(ErrorCodes.CNPJ_IN_USE, 409, "CNPJ já cadastrado", "cnpj");
@@ -86,6 +93,7 @@ public class UpsertCompanyUseCase {
             company.status = Company.Status.PENDING_DOCUMENTS;
             company.cnpj = cnpj;
             company.razaoSocial = razaoSocial.trim();
+            company.wallet = carteira;
         }
         company.termsVersion = terms;
         company.termsAcceptedAt = Instant.now();

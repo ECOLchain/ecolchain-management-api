@@ -38,7 +38,7 @@ public class PanacheCompanyStore implements CompanyStore {
             e.id = c.id == null ? UUID.randomUUID() : c.id;
             e.createdAt = Instant.now();
         }
-        e.cnpj = c.cnpj; e.razaoSocial = c.razaoSocial; e.status = c.status.name();
+        e.cnpj = c.cnpj; e.razaoSocial = c.razaoSocial; e.wallet = c.wallet; e.status = c.status.name();
         e.reviewNotes = c.reviewNotes; e.termsVersion = c.termsVersion;
         e.termsAcceptedAt = c.termsAcceptedAt; e.submittedAt = c.submittedAt;
         e.updatedAt = Instant.now();
@@ -50,12 +50,23 @@ public class PanacheCompanyStore implements CompanyStore {
     @Override
     @Transactional
     public void setProfiles(UUID companyId, List<UUID> profileTypeIds) {
-        CompanyProfileEntity.delete("companyId", companyId);
+        // Diff em vez de delete-all: entidades já carregadas no persistence
+        // context colidem com o re-persist do mesmo PK (NonUniqueObjectException).
+        var existing = CompanyProfileEntity.<CompanyProfileEntity>find("companyId", companyId).list();
+        var wanted = new java.util.HashSet<>(profileTypeIds);
+        for (var e : existing) {
+            if (!wanted.contains(e.profileTypeId)) {
+                e.delete();
+            }
+        }
         for (UUID ptId : profileTypeIds) {
-            var p = new CompanyProfileEntity();
-            p.companyId = companyId;
-            p.profileTypeId = ptId;
-            p.persist();
+            boolean jaExiste = existing.stream().anyMatch(e -> e.profileTypeId.equals(ptId));
+            if (!jaExiste) {
+                var p = new CompanyProfileEntity();
+                p.companyId = companyId;
+                p.profileTypeId = ptId;
+                p.persist();
+            }
         }
     }
 
@@ -92,7 +103,7 @@ public class PanacheCompanyStore implements CompanyStore {
 
     private Company toDomain(CompanyEntity e) {
         var c = new Company();
-        c.id = e.id; c.cnpj = e.cnpj; c.razaoSocial = e.razaoSocial;
+        c.id = e.id; c.cnpj = e.cnpj; c.razaoSocial = e.razaoSocial; c.wallet = e.wallet;
         c.status = Company.Status.valueOf(e.status);
         c.reviewNotes = e.reviewNotes; c.termsVersion = e.termsVersion;
         c.termsAcceptedAt = e.termsAcceptedAt; c.createdAt = e.createdAt;

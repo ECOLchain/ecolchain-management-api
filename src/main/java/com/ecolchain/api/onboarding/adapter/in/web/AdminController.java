@@ -377,4 +377,57 @@ public class AdminController implements AdminApi {
         body.setErros(List.of());
         return Response.ok(body).build();
     }
+
+    // ---------- contas admin ----------
+
+    private AdminAccount adminAccountOf(Account a) {
+        var m = new AdminAccount();
+        m.setId(a.id);
+        m.setEmail(a.email);
+        m.setNomeCompleto(a.fullName);
+        m.setTelefone(a.phone);
+        m.setPapel(AccountRole.valueOf(a.role.name()));
+        m.setCriadoEm(a.createdAt.atOffset(ZoneOffset.UTC));
+        return m;
+    }
+
+    @Override
+    public Response listAdminAccounts() {
+        admin();
+        var data = new AdminAccountsResponseAllOfData();
+        data.setAdmins(accounts.listByRole(Account.Role.PLATFORM_ADMIN).stream()
+                .map(this::adminAccountOf).toList());
+        var body = new AdminAccountsResponse();
+        body.setData(data);
+        body.setLinks(List.of());
+        body.setErros(List.of());
+        return Response.ok(body).build();
+    }
+
+    @Override
+    @jakarta.transaction.Transactional
+    public Response createAdminAccount(AdminAccountCreateRequest req) {
+        var actor = admin();
+        String email = req.getEmail() == null ? "" : req.getEmail().trim().toLowerCase();
+        if (email.isEmpty() || req.getNomeCompleto() == null || req.getNomeCompleto().isBlank()
+                || req.getTelefone() == null || req.getTelefone().isBlank()) {
+            throw new BusinessException(ErrorCodes.VALIDATION, 400,
+                    "email, nomeCompleto e telefone são obrigatórios");
+        }
+        if (accounts.byEmail(email).isPresent()) {
+            throw new BusinessException(ErrorCodes.ACCOUNT_IN_USE, 409,
+                    "já existe uma conta com este e-mail");
+        }
+        var a = Account.verified(email, Account.Role.PLATFORM_ADMIN);
+        a.fullName = req.getNomeCompleto().trim();
+        a.phone = req.getTelefone().trim();
+        a = accounts.save(a);
+        audit.log(actor.id, actor.email, "ADMIN_ACCOUNT_CREATED", "account",
+                a.id.toString(), email);
+        var body = new AdminAccountResponse();
+        body.setData(adminAccountOf(a));
+        body.setLinks(List.of());
+        body.setErros(List.of());
+        return Response.status(Response.Status.CREATED).entity(body).build();
+    }
 }

@@ -10,6 +10,7 @@ public class Account {
     public UUID id;
     public String email;
     public String fullName;
+    public String phone;
     public Role role;
     public Status status;
     public Instant createdAt;

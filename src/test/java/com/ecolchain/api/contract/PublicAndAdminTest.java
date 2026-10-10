@@ -4,6 +4,7 @@ import com.ecolchain.api.catalog.application.port.out.CatalogStore;
 import com.ecolchain.api.catalog.domain.ProfileType;
 import com.ecolchain.api.identity.application.port.out.AccountStore;
 import com.ecolchain.api.identity.domain.Account;
+import com.ecolchain.api.onboarding.application.port.out.AuditStore;
 import com.ecolchain.api.onboarding.application.port.out.CompanyStore;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
@@ -24,6 +25,7 @@ class PublicAndAdminTest {
     @InjectMock CatalogStore catalog;
     @InjectMock AccountStore accounts;
     @InjectMock CompanyStore companies;
+    @InjectMock AuditStore audit;
 
     private ProfileType type(String code, int pos) {
         var p = new ProfileType();
@@ -35,7 +37,7 @@ class PublicAndAdminTest {
 
     @BeforeEach
     void reset() {
-        Mockito.reset(catalog, accounts, companies);
+        Mockito.reset(catalog, accounts, companies, audit);
         Mockito.when(catalog.listProfileTypes(true))
                 .thenReturn(List.of(type("GERADOR", 10), type("RECICLADORA", 50)));
     }
@@ -92,5 +94,49 @@ class PublicAndAdminTest {
                 .then().statusCode(200)
                 .body("data.empresas.size()", is(0))
                 .body("data.total", is(0));
+    }
+
+    @Test
+    @TestSecurity(user = "22222222-2222-4222-8222-222222222222", roles = "PLATFORM_ADMIN")
+    void createAdminAccountReturnsCreatedAccount() {
+        var acc = new Account();
+        acc.id = UUID.fromString("22222222-2222-4222-8222-222222222222");
+        acc.email = "admin@ecolchain.com";
+        acc.role = Account.Role.PLATFORM_ADMIN;
+        acc.status = Account.Status.ACTIVE;
+        Mockito.when(accounts.byId(acc.id)).thenReturn(Optional.of(acc));
+        Mockito.when(accounts.byEmail("novo@ecolchain.com")).thenReturn(Optional.empty());
+        Mockito.when(accounts.save(any())).thenAnswer(inv -> {
+            Account a = inv.getArgument(0);
+            a.id = UUID.randomUUID();
+            a.createdAt = java.time.Instant.now();
+            a.updatedAt = java.time.Instant.now();
+            return a;
+        });
+        given().contentType("application/json")
+                .body("{\"email\":\"novo@ecolchain.com\",\"nomeCompleto\":\"Novo Admin\",\"telefone\":\"+55119998887777\"}")
+                .when().post("/admin/accounts")
+                .then().statusCode(201)
+                .body("data.email", is("novo@ecolchain.com"))
+                .body("data.papel", is("PLATFORM_ADMIN"))
+                .body("data.criadoEm", notNullValue())
+                .body("erros.size()", is(0));
+    }
+
+    @Test
+    @TestSecurity(user = "22222222-2222-4222-8222-222222222222", roles = "PLATFORM_ADMIN")
+    void createAdminAccountWithDuplicateEmailIs409() {
+        var acc = new Account();
+        acc.id = UUID.fromString("22222222-2222-4222-8222-222222222222");
+        acc.email = "admin@ecolchain.com";
+        acc.role = Account.Role.PLATFORM_ADMIN;
+        acc.status = Account.Status.ACTIVE;
+        Mockito.when(accounts.byId(acc.id)).thenReturn(Optional.of(acc));
+        Mockito.when(accounts.byEmail("existe@ecolchain.com")).thenReturn(Optional.of(acc));
+        given().contentType("application/json")
+                .body("{\"email\":\"existe@ecolchain.com\",\"nomeCompleto\":\"Outro\",\"telefone\":\"+55119998887777\"}")
+                .when().post("/admin/accounts")
+                .then().statusCode(409)
+                .body("erros[0].code", is("ACCOUNT_IN_USE"));
     }
 }

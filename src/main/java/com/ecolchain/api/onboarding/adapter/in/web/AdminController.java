@@ -396,7 +396,7 @@ public class AdminController implements AdminApi {
         m.setNomeCompleto(a.fullName);
         m.setTelefone(a.phone);
         m.setPapel(AccountRole.valueOf(a.role.name()));
-        m.setCriadoEm(a.createdAt.atOffset(ZoneOffset.UTC));
+        if (a.createdAt != null) m.setCriadoEm(a.createdAt.atOffset(ZoneOffset.UTC));
         return m;
     }
 

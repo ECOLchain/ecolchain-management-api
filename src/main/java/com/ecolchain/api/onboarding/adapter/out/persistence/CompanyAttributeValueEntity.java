@@ -12,5 +12,7 @@ public class CompanyAttributeValueEntity extends PanacheEntityBase {
     @Column(name = "company_id", nullable = false) public UUID companyId;
     @Column(name = "attribute_id", nullable = false) public UUID attributeId;
     @Column(name = "value_text") public String valueText;
+    @Column(name = "review_status", nullable = false) public String reviewStatus = "PENDING";
+    @Column(name = "review_note") public String reviewNote;
     @Column(name = "updated_at", nullable = false) public Instant updatedAt;
 }

@@ -13,6 +13,7 @@ public class Company {
     public UUID id;
     public String cnpj;
     public String razaoSocial;
+    public String wallet;
     public Status status;
     public String reviewNotes;
     public String termsVersion;

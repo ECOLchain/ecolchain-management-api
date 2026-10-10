@@ -75,7 +75,8 @@ public class GetOnboardingUseCase {
                         ? valueMap.containsKey(attr.def().id) && valueMap.get(attr.def().id).valueText() != null
                             && !valueMap.get(attr.def().id).valueText().isBlank()
                         : docMap.containsKey(attr.def().id)
-                            && docMap.get(attr.def().id).status == CompanyDocument.Status.UPLOADED;
+                            && (docMap.get(attr.def().id).status == CompanyDocument.Status.UPLOADED
+                                || docMap.get(attr.def().id).status == CompanyDocument.Status.ACCEPTED);
                 if (ok) filled++;
             }
         }

@@ -45,6 +45,8 @@ public class PanacheAccountStore implements AccountStore {
         e.updatedAt = Instant.now();
         e.persist();
         account.id = e.id;
+        account.createdAt = e.createdAt;
+        account.updatedAt = e.updatedAt;
         return account;
     }
 

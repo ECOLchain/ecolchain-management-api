@@ -802,6 +802,56 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /admin/accounts:
+    get:
+      tags: [admin]
+      operationId: listAdminAccounts
+      summary: Lista contas de administradores da plataforma
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Contas admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [admin]
+      operationId: createAdminAccount
+      summary: Cria conta de admin (email + nome + telefone); o usuário entra como admin no primeiro login por OTP
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAccountCreateRequest'
+      responses:
+        '201':
+          description: Conta admin criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1010,6 +1060,9 @@ components:
         papel:
           $ref: '#/components/schemas/AccountRole'
         nomeCompleto:
+          type: string
+          nullable: true
+        telefone:
           type: string
           nullable: true
 
@@ -1672,6 +1725,61 @@ components:
               type: string
               format: date-time
               nullable: true
+
+    AdminAccountsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                admins:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AdminAccount'
+
+    AdminAccountResponse:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AdminAccount'
+
+    AdminAccount:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        nomeCompleto:
+          type: string
+          nullable: true
+        telefone:
+          type: string
+          nullable: true
+        papel:
+          $ref: '#/components/schemas/AccountRole'
+        criadoEm:
+          type: string
+          format: date-time
+
+    AdminAccountCreateRequest:
+      type: object
+      required: [email, nomeCompleto, telefone]
+      properties:
+        email:
+          type: string
+          format: email
+        nomeCompleto:
+          type: string
+        telefone:
+          type: string
+          description: Telefone de contato do admin (formato livre)
 
     ReviewRequest:
       type: object

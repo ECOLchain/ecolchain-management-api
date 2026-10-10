@@ -38,7 +38,7 @@ public class PanacheCompanyStore implements CompanyStore {
             e.id = c.id == null ? UUID.randomUUID() : c.id;
             e.createdAt = Instant.now();
         }
-        e.cnpj = c.cnpj; e.razaoSocial = c.razaoSocial; e.status = c.status.name();
+        e.cnpj = c.cnpj; e.razaoSocial = c.razaoSocial; e.wallet = c.wallet; e.status = c.status.name();
         e.reviewNotes = c.reviewNotes; e.termsVersion = c.termsVersion;
         e.termsAcceptedAt = c.termsAcceptedAt; e.submittedAt = c.submittedAt;
         e.updatedAt = Instant.now();
@@ -92,7 +92,7 @@ public class PanacheCompanyStore implements CompanyStore {
 
     private Company toDomain(CompanyEntity e) {
         var c = new Company();
-        c.id = e.id; c.cnpj = e.cnpj; c.razaoSocial = e.razaoSocial;
+        c.id = e.id; c.cnpj = e.cnpj; c.razaoSocial = e.razaoSocial; c.wallet = e.wallet;
         c.status = Company.Status.valueOf(e.status);
         c.reviewNotes = e.reviewNotes; c.termsVersion = e.termsVersion;
         c.termsAcceptedAt = e.termsAcceptedAt; c.createdAt = e.createdAt;

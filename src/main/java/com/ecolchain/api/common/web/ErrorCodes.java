@@ -35,6 +35,7 @@ public final class ErrorCodes {
     public static final String COMPANY_LOCKED = "COMPANY_LOCKED";
     public static final String COMPANY_NOT_FOUND = "COMPANY_NOT_FOUND";
     public static final String COMPANY_EXISTS = "COMPANY_EXISTS";
+    public static final String WALLET_INVALID = "WALLET_INVALID";
 
     // catalog / onboarding
     public static final String ATTRIBUTE_INVALID = "ATTRIBUTE_INVALID";

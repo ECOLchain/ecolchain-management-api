@@ -1142,6 +1142,10 @@ components:
           type: string
         razaoSocial:
           type: string
+        carteira:
+          type: string
+          nullable: true
+          description: Endereço da carteira blockchain da empresa
         status:
           $ref: '#/components/schemas/CompanyStatus'
         tiposPerfil:
@@ -1160,7 +1164,7 @@ components:
 
     CompanyUpsertRequest:
       type: object
-      required: [cnpj, razaoSocial, nomeCompleto, tiposPerfil, declaracaoRepresentante, versaoTermos]
+      required: [cnpj, razaoSocial, nomeCompleto, tiposPerfil, declaracaoRepresentante, versaoTermos, carteira]
       properties:
         cnpj:
           type: string
@@ -1171,6 +1175,13 @@ components:
         nomeCompleto:
           type: string
           description: Nome completo do dono ou representante legal
+        carteira:
+          type: string
+          description: >-
+            Endereço da carteira blockchain da empresa — usado para cadastro
+            on-chain. Aceita endereço Solana (base58, 32-44 chars) ou EVM
+            (0x + 40 hex).
+          example: 9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM
         tiposPerfil:
           type: array
           minItems: 1
@@ -1659,6 +1670,10 @@ components:
           type: string
         razaoSocial:
           type: string
+        carteira:
+          type: string
+          nullable: true
+          description: Endereço da carteira blockchain da empresa
         status:
           $ref: '#/components/schemas/CompanyStatus'
         tiposPerfil:

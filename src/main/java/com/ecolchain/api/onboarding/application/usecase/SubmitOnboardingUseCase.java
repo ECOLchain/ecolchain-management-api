@@ -39,7 +39,8 @@ public class SubmitOnboardingUseCase {
                             return v == null || v.valueText() == null || v.valueText().isBlank();
                         }
                         var d = result.documents().get(a.def().id);
-                        return d == null || d.status != CompanyDocument.Status.UPLOADED;
+                        return d == null || (d.status != CompanyDocument.Status.UPLOADED
+                                && d.status != CompanyDocument.Status.ACCEPTED);
                     })
                     .map(a -> a.def().code)
                     .collect(Collectors.joining(", "));

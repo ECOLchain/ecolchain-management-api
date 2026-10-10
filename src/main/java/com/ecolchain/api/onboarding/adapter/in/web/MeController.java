@@ -44,6 +44,7 @@ public class MeController implements MeApi {
         e.setId(c.id);
         e.setCnpj(c.cnpj);
         e.setRazaoSocial(c.razaoSocial);
+        e.setCarteira(c.wallet);
         e.setStatus(CompanyStatus.valueOf(c.status.name()));
         e.setTiposPerfil(c.profileTypeCodes);
         return e;
@@ -78,7 +79,7 @@ public class MeController implements MeApi {
     public Response upsertCompany(CompanyUpsertRequest req) {
         var account = current.require();
         var company = upsertCompany.execute(account, req.getCnpj(), req.getRazaoSocial(),
-                req.getNomeCompleto(), req.getTiposPerfil(), req.getDeclaracaoRepresentante(),
+                req.getNomeCompleto(), req.getCarteira(), req.getTiposPerfil(), req.getDeclaracaoRepresentante(),
                 req.getVersaoTermos());
         var body = new CompanyResponse();
         body.setData(empresaOf(company));
@@ -117,7 +118,15 @@ public class MeController implements MeApi {
                 a.setObrigatorio(attr.required());
                 a.setRegras(rulesOf(attr.def()));
                 var v = r.values().get(attr.def().id);
-                if (v != null) a.setValor(v.valueText());
+                if (v != null) {
+                    a.setValor(v.valueText());
+                    if (v.reviewStatus() != null && !"PENDING".equals(v.reviewStatus())) {
+                        var rev = new Revisao();
+                        rev.setStatus(Revisao.StatusEnum.fromValue(v.reviewStatus()));
+                        rev.setNota(v.reviewNote());
+                        a.setRevisao(rev);
+                    }
+                }
                 var doc = r.documents().get(attr.def().id);
                 if (doc != null && doc.status != CompanyDocument.Status.PENDING_UPLOAD) {
                     var rev = new Revisao();

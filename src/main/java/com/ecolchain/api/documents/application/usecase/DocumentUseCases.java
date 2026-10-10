@@ -109,7 +109,8 @@ public class DocumentUseCases {
                 .orElseThrow(() -> new BusinessException(ErrorCodes.DOCUMENT_INVALID, 404, "documento desconhecido"));
         var doc = documents.byCompanyAndAttribute(company.id, def.id)
                 .filter(d -> d.status == CompanyDocument.Status.UPLOADED
-                        || d.status == CompanyDocument.Status.ACCEPTED)
+                        || d.status == CompanyDocument.Status.ACCEPTED
+                        || d.status == CompanyDocument.Status.REJECTED)
                 .orElseThrow(() -> new BusinessException(ErrorCodes.DOCUMENT_NOT_CONFIRMED, 404,
                         "documento não enviado"));
         var p = storage.presignDownload(doc.objectKey);

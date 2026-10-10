@@ -14,6 +14,7 @@ public class AccountEntity extends PanacheEntityBase {
     @Id public UUID id;
     @Column(nullable = false) public String email;
     @Column(name = "full_name") public String fullName;
+    @Column(name = "phone") public String phone;
     @Column(nullable = false) public String role;
     @Column(nullable = false) public String status;
     @Column(name = "created_at", nullable = false) public Instant createdAt;

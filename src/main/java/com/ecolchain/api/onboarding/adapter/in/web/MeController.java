@@ -35,6 +35,7 @@ public class MeController implements MeApi {
         c.setEmail(a.email);
         c.setPapel(AccountRole.valueOf(a.role.name()));
         c.setNomeCompleto(a.fullName);
+        c.setTelefone(a.phone);
         return c;
     }
 

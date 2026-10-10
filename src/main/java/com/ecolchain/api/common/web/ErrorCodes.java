@@ -24,6 +24,7 @@ public final class ErrorCodes {
     public static final String REFRESH_INVALID = "REFRESH_INVALID";
     public static final String REFRESH_REUSED = "REFRESH_REUSED";
     public static final String ACCOUNT_BLOCKED = "ACCOUNT_BLOCKED";
+    public static final String ACCOUNT_IN_USE = "ACCOUNT_IN_USE";
 
     // company
     public static final String CNPJ_INVALID = "CNPJ_INVALID";

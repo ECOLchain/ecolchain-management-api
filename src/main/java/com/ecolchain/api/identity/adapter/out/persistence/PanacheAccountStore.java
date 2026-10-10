@@ -5,6 +5,7 @@ import com.ecolchain.api.identity.domain.Account;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,6 +23,12 @@ public class PanacheAccountStore implements AccountStore {
     }
 
     @Override
+    public List<Account> listByRole(Account.Role role) {
+        return AccountEntity.<AccountEntity>find("role", role.name()).list().stream()
+                .map(this::toDomain).toList();
+    }
+
+    @Override
     @Transactional
     public Account save(Account account) {
         AccountEntity e = account.id != null ? AccountEntity.findById(account.id) : null;
@@ -32,6 +39,7 @@ public class PanacheAccountStore implements AccountStore {
         }
         e.email = account.email.toLowerCase();
         e.fullName = account.fullName;
+        e.phone = account.phone;
         e.role = account.role.name();
         e.status = account.status.name();
         e.updatedAt = Instant.now();
@@ -42,7 +50,7 @@ public class PanacheAccountStore implements AccountStore {
 
     private Account toDomain(AccountEntity e) {
         var a = new Account();
-        a.id = e.id; a.email = e.email; a.fullName = e.fullName;
+        a.id = e.id; a.email = e.email; a.fullName = e.fullName; a.phone = e.phone;
         a.role = Account.Role.valueOf(e.role); a.status = Account.Status.valueOf(e.status);
         a.createdAt = e.createdAt; a.updatedAt = e.updatedAt;
         return a;
